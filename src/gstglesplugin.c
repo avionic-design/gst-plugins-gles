@@ -2,30 +2,7 @@
  * GStreamer
  * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
- * Copyright (C) YEAR AUTHOR_NAME AUTHOR_EMAIL
- * 
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
- *
- * Alternatively, the contents of this file may be used under the
- * GNU Lesser General Public License Version 2.1 (the "LGPL"), in
- * which case the following provisions apply instead of the ones
- * mentioned above:
+ * Copyright (C) 2011 Julian Scheel <julian@jusst.de>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -59,6 +36,8 @@
 #  include <config.h>
 #endif
 
+#include <string.h>
+
 #include <gst/gst.h>
 #include <gst/video/video.h>
 
@@ -66,12 +45,12 @@
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 
-#include  <X11/Xatom.h>
+#include <X11/Xatom.h>
 
 #include "gstglesplugin.h"
+#include "shader.h"
 
-GST_DEBUG_CATEGORY_STATIC (gst_gles_plugin_debug);
-#define GST_CAT_DEFAULT gst_gles_plugin_debug
+GST_DEBUG_CATEGORY (gst_gles_plugin_debug);
 
 enum
 {
@@ -95,6 +74,7 @@ static GstFlowReturn gst_gles_plugin_render (GstBaseSink * basesink,
                                              GstBuffer * buf);
 static GstFlowReturn gst_gles_plugin_preroll (GstBaseSink * basesink,
                                               GstBuffer * buf);
+static void gst_gles_plugin_finalize (GObject *gobject);
 
 #define WxH ", width = (int) [ 16, 4096 ], height = (int) [ 16, 4096 ]"
 
@@ -105,175 +85,107 @@ static GstStaticPadTemplate gles_sink_factory =
                                  GST_STATIC_CAPS ( GST_VIDEO_CAPS_YUV("I420") WxH));
 
 
+
+
 /* OpenGL ES 2.0 implementation */
-
-/* load and compile a shader src into a
- * shader program */
 static GLuint
-gl_load_shader (GstGLESPlugin *sink,
-             const char *shader_src, GLenum type)
+gl_create_texture()
 {
-    GLuint shader;
-    GLint compiled;
+    GLuint tex_id;
 
-    /* create a shader object */
-    shader = glCreateShader (type);
-    if (shader == 0) {
-        GST_ERROR_OBJECT(sink, "Could not create shader object");
-        return 0;
-    }
+    glGenTextures (1, &tex_id);
+    glBindTexture (GL_TEXTURE_2D, tex_id);
 
-    /* load source into shader object */
-    glShaderSource (shader, 1, &shader_src, NULL);
+    glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    /* compile the shader */
-    glCompileShader (shader);
-
-    /* check compiler status */
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
-
-    if (!compiled) {
-        GLint info_len = 0;
-
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_len);
-
-        if(info_len > 1) {
-            char *info_log = malloc(sizeof(char) * info_len);
-            glGetShaderInfoLog(shader, info_len, NULL, info_log);
-
-            GST_ERROR_OBJECT(sink, "Failed to compile shader: %s", info_log);
-            free(info_log);
-        }
-
-        glDeleteShader(shader);
-        return 0;
-    }
-
-    return shader;
-}
-
-/* initialises the GL program with its shaders
- * and sets the program handle
- * returns 0 on succes, -1 on failure*/
-static gint
-gl_init_shader (GstGLESPlugin *sink)
-{
-    const char *vertex_shader_src =
-            "attribute vec4 vPosition;                      \n"
-            "attribute vec2 aTexcoord;                      \n"
-            "varying vec2 vTexcoord;                        \n"
-            ""
-            "void main()                                    \n"
-            "{                                              \n"
-            "   gl_Position = vPosition;                    \n"
-            "   vTexcoord = aTexcoord;                      \n"
-            "}                                              \n";
-
-    const char *fragment_shader_src =
-            "precision mediump float;                       \n"
-            "varying vec2 vTexcoord;                        \n"
-            "uniform sampler2D s_texture;                   \n"
-            ""
-            "void main()                                    \n"
-            "{                                              \n"
-            "   gl_FragColor = texture2D(s_texture, vTexcoord);\n"
-            "}                                              \n";
-
-    GLuint vertex_shader;
-    GLuint fragment_shader;
-    GLuint program;
-    GLint linked;
-
-    /* load the shaders */
-    vertex_shader = gl_load_shader(sink, vertex_shader_src, GL_VERTEX_SHADER);
-    fragment_shader = gl_load_shader(sink, fragment_shader_src, GL_FRAGMENT_SHADER);
-
-    program = glCreateProgram();
-
-    if(!program) {
-        GST_ERROR_OBJECT(sink, "Could not create GL program");
-        return -1;
-    }
-
-    glAttachShader(program, vertex_shader);
-    glAttachShader(program, fragment_shader);
-    glBindAttribLocation(program, 0, "vPosition");
-
-    glLinkProgram(program);
-
-    /* check linker status */
-    glGetProgramiv(program, GL_LINK_STATUS, &linked);
-
-    if(!linked) {
-        GLint info_len = 0;
-
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_len);
-
-        if(info_len > 1) {
-            char *info_log = malloc(sizeof(char) * info_len);
-            glGetProgramInfoLog(program, info_len, NULL, info_log);
-
-            GST_ERROR_OBJECT(sink, "Failed to link GL program: %s", info_log);
-            free(info_log);
-        }
-
-        glDeleteProgram(program);
-        return -1;
-    }
-
-    sink->program = program;
-    glUseProgram(sink->program);
-
-    sink->position_loc = glGetAttribLocation(sink->program, "vPosition");
-    sink->sampler_loc = glGetAttribLocation(sink->program, "aTexcoord");
-
-    glClearColor(0.0, 0.0, 0.0, 1.0);
-    return 0;
-}
-
-static void
-gl_draw (GstGLESPlugin *sink)
-{
-    GLfloat vVertices[] =
-    {
-        0.0f, 0.5f, 0.0f,
-        -0.5f, -0.5f, 0.0f,
-        0.5f, -0.5f, 0.0f
-    };
-
-    glViewport (0, 0, GST_VIDEO_SINK_WIDTH (sink),
-               GST_VIDEO_SINK_HEIGHT (sink));
-
-    glClear (GL_COLOR_BUFFER_BIT);
-
-    glUniform1i(sink->sampler_loc, 0);
-    glVertexAttribPointer (sink->position_loc, 3, GL_FLOAT, GL_FALSE, 0, vVertices);
-    glEnableVertexAttribArray (sink->position_loc);
-
-    glDrawArrays (GL_TRIANGLES, 0, 3);
-
-    eglSwapBuffers (sink->display, sink->surface);
+    return tex_id;
 }
 
 static void
 gl_init_textures (GstGLESPlugin *sink)
 {
     //glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glGenTextures(1, &sink->texture);
-    glBindTexture(GL_TEXTURE_2D, sink->texture);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    sink->y_texture = gl_create_texture();
+    sink->u_texture = gl_create_texture();
+    sink->v_texture = gl_create_texture();
 }
 
 static void
 gl_load_texture (GstGLESPlugin *sink, GstBuffer *buf)
 {
-    glActiveTexture(sink->texture);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, sink->video_width,
-                 sink->video_height, 0, GL_RGB,
+    /* y component */
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture (GL_TEXTURE_2D, sink->y_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, sink->video_width,
+                 sink->video_height, 0, GL_LUMINANCE,
                  GL_UNSIGNED_BYTE, GST_BUFFER_DATA (buf));
+    glUniform1i (sink->y_loc, 0);
+
+    /* u component */
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture (GL_TEXTURE_2D, sink->u_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, sink->video_width/2,
+                 sink->video_height/2, 0, GL_LUMINANCE,
+                 GL_UNSIGNED_BYTE, GST_BUFFER_DATA (buf) +
+                 sink->video_width * sink->video_height);
+    glUniform1i (sink->u_loc, 1);
+
+    /* v component */
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture (GL_TEXTURE_2D, sink->v_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, sink->video_width/2,
+                 sink->video_height/2, 0, GL_LUMINANCE,
+                 GL_UNSIGNED_BYTE, GST_BUFFER_DATA (buf) +
+                 sink->video_width * sink->video_height +
+                 sink->video_width/2 * sink->video_height/2);
+    glUniform1i (sink->v_loc, 2);
+
+}
+
+static void
+gl_draw (GstGLESPlugin *sink, GstBuffer *buf)
+{
+    GLfloat vVertices[] =
+    {
+        -1.0f, -1.0f,
+        0.0f, 1.0f,
+
+        1.0f, -1.0f,
+        1.0f, 1.0f,
+
+        1.0f, 1.0f,
+        1.0f, 0.0f,
+
+        -1.0f, 1.0f,
+        0.0f, 0.0f,
+    };
+    GLushort indices[] = { 0, 1, 2, 0, 2, 3 };
+
+    glViewport (0, 0, GST_VIDEO_SINK_WIDTH (sink),
+               GST_VIDEO_SINK_HEIGHT (sink));
+
+    glClear (GL_COLOR_BUFFER_BIT);
+
+    glVertexAttribPointer (sink->position_loc, 2, GL_FLOAT,
+        GL_FALSE, 4 * sizeof (GLfloat), vVertices);
+
+    glVertexAttribPointer (sink->texcoord_loc, 2, GL_FLOAT,
+        GL_FALSE, 4 * sizeof (GLfloat), &vVertices[2]);
+
+
+    //glVertexAttribPointer (sink->position_loc, 3, GL_FLOAT, GL_FALSE, 0, vVertices);
+    glEnableVertexAttribArray (sink->position_loc);
+    glEnableVertexAttribArray (sink->texcoord_loc);
+
+    gl_load_texture(sink, buf);
+    GLint line_height_loc = glGetUniformLocation(sink->program, "line_height");
+    glUniform1f(line_height_loc, 1.0/sink->video_height);
+
+    glDrawElements (GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, indices);
+
+    eglSwapBuffers (sink->display, sink->surface);
 }
 
 /* EGL implementation */
@@ -354,9 +266,30 @@ egl_init (GstGLESPlugin *sink)
 static void
 egl_close(GstGLESPlugin *sink)
 {
-    eglDestroyContext (sink->display, sink->context);
-    eglDestroySurface (sink->display, sink->surface);
-    eglTerminate (sink->display);
+    GLuint textures[] = { 0, 1, 2 };
+
+    GST_DEBUG_OBJECT (sink,"egl close");
+    if (sink->initialized) {
+        glDeleteTextures (3, textures);
+        glDeleteShader (sink->vertex_shader);
+        glDeleteShader (sink->fragment_shader);
+        glDeleteProgram (sink->program);
+    }
+
+    if (sink->surface) {
+        eglDestroySurface (sink->display, sink->surface) ;
+        sink->surface = NULL;
+    }
+
+    if (sink->context) {
+        eglDestroyContext (sink->display, sink->context);
+        sink->context = NULL;
+    }
+
+    if (sink->display) {
+        eglTerminate (sink->display);
+        sink->display = NULL;
+    }
 }
 
 static gint
@@ -398,8 +331,12 @@ x11_init (GstGLESPlugin *sink, gint width, gint height)
 static void
 x11_close (GstGLESPlugin *sink)
 {
-    XDestroyWindow(sink->x_display, sink->x_window);
-    XCloseDisplay(sink->x_display);
+    GST_DEBUG_OBJECT(sink,"x11 close");
+    if (sink->x_display) {
+        XDestroyWindow(sink->x_display, sink->x_window);
+        XCloseDisplay(sink->x_display);
+        sink->x_display = NULL;
+    }
 }
 
 
@@ -426,6 +363,8 @@ gst_gles_plugin_class_init (GstGLESPluginClass * klass)
 {
   GstBaseSinkClass *basesink_class = GST_BASE_SINK_CLASS (klass);
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
+
+  gobject_class->finalize = gst_gles_plugin_finalize;
 
   gobject_class->set_property = gst_gles_plugin_set_property;
   gobject_class->get_property = gst_gles_plugin_get_property;
@@ -515,7 +454,9 @@ gst_gles_plugin_stop (GstBaseSink *basesink)
 
     egl_close(sink);
     x11_close (sink);
-    GST_LOG_OBJECT (sink, "stop");
+
+    sink->initialized = 0;
+    GST_LOG_OBJECT (sink, "stopped");
 
     return TRUE;
 }
@@ -568,7 +509,11 @@ gst_gles_plugin_render (GstBaseSink *basesink, GstBuffer *buf)
 {
     GstGLESPlugin *sink = GST_GLES_PLUGIN (basesink);
 
+    /* FIXME: this shouldn't be done here, but in _start() due to _start
+     *        being in a different thread this leads to problems. has to be
+     *        investigated further. */
     if(!sink->initialized) {
+        gint ret;
 
         GST_DEBUG_OBJECT(sink, "Initialize X11");
         if(x11_init(sink, 720, 576) < 0) {
@@ -584,8 +529,9 @@ gst_gles_plugin_render (GstBaseSink *basesink, GstBuffer *buf)
         }
 
         GST_DEBUG_OBJECT(sink, "Initialize GLES Shaders");
-        if(gl_init_shader(sink) < 0) {
-            GST_ERROR_OBJECT(sink, "Could not initialize shader");
+        ret = gl_init_shader(sink);
+        if (ret < 0) {
+            GST_ERROR_OBJECT(sink, "Could not initialize shader: %d", ret);
             egl_close(sink);
             x11_close(sink);
             return GST_FLOW_ERROR;
@@ -604,10 +550,17 @@ gst_gles_plugin_render (GstBaseSink *basesink, GstBuffer *buf)
         XNextEvent(sink->x_display, &xev);
     }*/
 
-    gl_load_texture(sink, buf);
-    gl_draw(sink);
+    gl_draw(sink, buf);
 
     return GST_FLOW_OK;
+}
+
+static void
+gst_gles_plugin_finalize (GObject *gobject)
+{
+    GstGLESPlugin *plugin = (GstGLESPlugin *)gobject;
+    egl_close(plugin);
+    x11_close(plugin);
 }
 
 /* entry point to initialize the plug-in

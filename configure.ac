@@ -49,6 +49,7 @@ PKG_CHECK_MODULES(GST, [
   gstreamer-video-0.10 >= $GST_REQUIRED
   glesv2
   egl
+  gio-2.0
 ], [
   AC_SUBST(GST_CFLAGS)
   AC_SUBST(GST_LIBS)

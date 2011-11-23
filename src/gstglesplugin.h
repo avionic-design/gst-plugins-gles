@@ -2,30 +2,7 @@
  * GStreamer
  * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
- * Copyright (C) YEAR AUTHOR_NAME AUTHOR_EMAIL
- * 
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
- *
- * Alternatively, the contents of this file may be used under the
- * GNU Lesser General Public License Version 2.1 (the "LGPL"), in
- * which case the following provisions apply instead of the ones
- * mentioned above:
+ * Copyright (C) 2011 Julian Scheel <julian@jusst.de>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -43,8 +20,8 @@
  * Boston, MA 02111-1307, USA.
  */
 
-#ifndef __GST_PLUGIN_TEMPLATE_H__
-#define __GST_PLUGIN_TEMPLATE_H__
+#ifndef _GST_GLES_PLUGIN_H__
+#define _GST_GLES_PLUGIN_H__
 
 #include <GLES2/gl2.h>
 #include <EGL/egl.h>
@@ -53,6 +30,9 @@
 
 #include <gst/gst.h>
 #include <gst/video/gstvideosink.h>
+
+GST_DEBUG_CATEGORY_EXTERN (gst_gles_plugin_debug);
+#define GST_CAT_DEFAULT gst_gles_plugin_debug
 
 G_BEGIN_DECLS
 
@@ -87,16 +67,25 @@ struct _GstGLESPlugin
 
   /* gl context */
   gint program;
+  GLuint vertex_shader;
+  GLuint fragment_shader;
+
   EGLDisplay display;
   EGLSurface surface;
   EGLContext context;
 
-  GLuint texture;
+  GLuint y_texture;
+  GLuint u_texture;
+  GLuint v_texture;
 
   gboolean initialized;
 
   GLint position_loc;
-  GLint sampler_loc;
+  GLint texcoord_loc;
+
+  GLint y_loc;
+  GLint u_loc;
+  GLint v_loc;
 
   /* properties */
   gboolean silent;
@@ -111,4 +100,4 @@ GType gst_gles_plugin_get_type (void);
 
 G_END_DECLS
 
-#endif /* __GST_PLUGIN_TEMPLATE_H__ */
+#endif /* _GST_GLES_PLUGIN_H__ */

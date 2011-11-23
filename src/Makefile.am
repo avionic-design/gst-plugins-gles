@@ -14,7 +14,9 @@ plugin_LTLIBRARIES = libgstglesplugin.la
 ##############################################################################
 
 # sources used to compile this plug-in
-libgstglesplugin_la_SOURCES = gstglesplugin.c gstglesplugin.h
+libgstglesplugin_la_SOURCES = \
+    shader.c shader.h \
+    gstglesplugin.c gstglesplugin.h
 
 # compiler and linker flags used to compile this plugin, set in configure.ac
 libgstglesplugin_la_CFLAGS = $(GST_CFLAGS)
@@ -23,4 +25,4 @@ libgstglesplugin_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
 libgstglesplugin_la_LIBTOOLFLAGS = --tag=disable-static
 
 # headers we need but don't want installed
-noinst_HEADERS = gstglesplugin.h
+noinst_HEADERS = gstglesplugin.h shader.h
