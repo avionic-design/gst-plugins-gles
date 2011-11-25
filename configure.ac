@@ -8,6 +8,7 @@ dnl required versions of gstreamer and plugins-base
 GST_REQUIRED=0.10.16
 GSTPB_REQUIRED=0.10.16
 
+AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR([src/gstglesplugin.c])
 AC_CONFIG_HEADERS([config.h])
 
