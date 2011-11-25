@@ -35,8 +35,7 @@ static const gchar* shader_basenames[] = {
 };
 
 #ifndef DATA_DIR
-//#define DATA_DIR "/usr/share/gstreamer-0.10/shaders"
-#define DATA_DIR "/root"
+#define DATA_DIR "/usr/share/gst-plugins-gles/shaders"
 #endif
 
 #define SHADER_EXT_BINARY ".glsh"
