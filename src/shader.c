@@ -31,7 +31,8 @@
 
 
 static const gchar* shader_basenames[] = {
-    "deint_linear" /* SHADER_DEINT_LINEAR */
+    "deint_linear", /* SHADER_DEINT_LINEAR */
+    "copy" /* SHADER_COPY, simple linear scaled copy shader */
 };
 
 #ifndef DATA_DIR
@@ -176,18 +177,87 @@ gl_load_shader (GstGLESPlugin *sink, const gchar *basename, const GLenum type)
 static gint
 gl_load_shaders (GstGLESPlugin *sink, Shaders process_type)
 {
-    sink->vertex_shader = gl_load_shader(sink, VERTEX_SHADER_BASENAME,
-                                         GL_VERTEX_SHADER);
+    sink->vertex_shader = gl_load_shader (sink, VERTEX_SHADER_BASENAME,
+                                          GL_VERTEX_SHADER);
     if (!sink->vertex_shader)
         return -EINVAL;
 
-    sink->fragment_shader = gl_load_shader(sink,
-                                           shader_basenames[process_type],
-                                           GL_FRAGMENT_SHADER);
+    sink->fragment_shader = gl_load_shader (sink,
+                                            shader_basenames[process_type],
+                                            GL_FRAGMENT_SHADER);
     if (!sink->fragment_shader)
         return -EINVAL;
 
+    sink->copy_vertex_shader = gl_load_shader (sink, VERTEX_SHADER_BASENAME,
+                                               GL_VERTEX_SHADER);
+    if (!sink->copy_vertex_shader)
+        return -EINVAL;
+
+    sink->copy_fragment_shader =
+            gl_load_shader (sink, shader_basenames[SHADER_COPY],
+                            GL_FRAGMENT_SHADER);
+    if (!sink->copy_fragment_shader)
+        return -EINVAL;
+
     return 0;
+}
+
+gint
+gl_init_copy_shader (GstGLESPlugin *sink)
+{
+    GLint linked;
+    gint ret;
+
+    GST_DEBUG_OBJECT(sink, "Create copy Program");
+    sink->copy_program = glCreateProgram();
+    if(!sink->copy_program) {
+        GST_ERROR_OBJECT(sink, "Could not create GL program");
+        return -ENOMEM;
+    }
+
+    GST_DEBUG_OBJECT(sink, "Attach vertex shader to copy program");
+    glAttachShader(sink->copy_program, sink->copy_vertex_shader);
+    GST_DEBUG_OBJECT(sink, "Attach copy shader to copy program");
+    glAttachShader(sink->copy_program, sink->copy_fragment_shader);
+    GST_DEBUG_OBJECT(sink, "Bind vPosition to copy program");
+    glBindAttribLocation(sink->copy_program, 0, "vPosition");
+
+    GST_DEBUG_OBJECT(sink, "Link Copy Program");
+    glLinkProgram(sink->copy_program);
+
+    /* check linker status */
+    GST_DEBUG_OBJECT(sink, "Get Linker Result");
+    glGetProgramiv(sink->copy_program, GL_LINK_STATUS, &linked);
+    if(!linked) {
+        GST_ERROR_OBJECT(sink, "Linker failure");
+        GLint info_len = 0;
+
+        glGetProgramiv(sink->copy_program, GL_INFO_LOG_LENGTH, &info_len);
+
+        if(info_len > 1) {
+            char *info_log = malloc(sizeof(char) * info_len);
+            glGetProgramInfoLog(sink->copy_program, info_len, NULL, info_log);
+
+            GST_ERROR_OBJECT(sink, "Failed to link GL program: %s", info_log);
+            free(info_log);
+        }
+
+        glDeleteProgram(sink->copy_program);
+        return -EINVAL;
+    }
+
+    glUseProgram(sink->copy_program);
+
+    sink->copy_position_loc = glGetAttribLocation(sink->copy_program,
+                                                  "vPosition");
+    sink->copy_texcoord_loc = glGetAttribLocation(sink->copy_program,
+                                                  "aTexcoord");
+
+    sink->copy_rgb_loc = glGetUniformLocation(sink->copy_program, "s_tex");
+
+    glClearColor(0.0, 0.0, 0.0, 1.0);
+
+    GST_DEBUG_OBJECT(sink, "GLES init done");
 }
 
 gint

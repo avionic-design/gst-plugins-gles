@@ -96,10 +96,32 @@ gl_create_texture()
     glGenTextures (1, &tex_id);
     glBindTexture (GL_TEXTURE_2D, tex_id);
 
+    glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    return tex_id;
+}
+
+static void
+gl_gen_framebuffer(GstGLESPlugin *sink)
+{
+    glGenFramebuffers (1, &sink->framebuffer);
+
+    glGenTextures (1, &sink->copy_rgb_texture);
+    if (!sink->copy_rgb_texture)
+        GST_ERROR_OBJECT (sink, "Could not create RGB texture");
+
+    glBindTexture (GL_TEXTURE_2D, sink->copy_rgb_texture);
+    glTexImage2D (GL_TEXTURE_2D, 0, GL_RGB, GST_VIDEO_SINK_WIDTH (sink),
+                  GST_VIDEO_SINK_HEIGHT (sink), 0, GL_RGB,
+                  GL_UNSIGNED_BYTE, NULL);
+
     glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    return tex_id;
+    glBindFramebuffer (GL_FRAMEBUFFER, sink->framebuffer);
+    glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                            GL_TEXTURE_2D, sink->copy_rgb_texture, 0);
 }
 
 static void
@@ -118,34 +140,37 @@ gl_load_texture (GstGLESPlugin *sink, GstBuffer *buf)
     /* y component */
     glActiveTexture(GL_TEXTURE0);
     glBindTexture (GL_TEXTURE_2D, sink->y_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, sink->video_width,
-                 sink->video_height, 0, GL_LUMINANCE,
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, GST_VIDEO_SINK_WIDTH (sink),
+                 GST_VIDEO_SINK_HEIGHT (sink), 0, GL_LUMINANCE,
                  GL_UNSIGNED_BYTE, GST_BUFFER_DATA (buf));
     glUniform1i (sink->y_loc, 0);
 
     /* u component */
     glActiveTexture(GL_TEXTURE1);
     glBindTexture (GL_TEXTURE_2D, sink->u_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, sink->video_width/2,
-                 sink->video_height/2, 0, GL_LUMINANCE,
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE,
+                 GST_VIDEO_SINK_WIDTH (sink)/2,
+                 GST_VIDEO_SINK_HEIGHT (sink)/2, 0, GL_LUMINANCE,
                  GL_UNSIGNED_BYTE, GST_BUFFER_DATA (buf) +
-                 sink->video_width * sink->video_height);
+                 GST_VIDEO_SINK_WIDTH (sink) * GST_VIDEO_SINK_HEIGHT (sink));
     glUniform1i (sink->u_loc, 1);
 
     /* v component */
     glActiveTexture(GL_TEXTURE2);
     glBindTexture (GL_TEXTURE_2D, sink->v_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, sink->video_width/2,
-                 sink->video_height/2, 0, GL_LUMINANCE,
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE,
+                 GST_VIDEO_SINK_WIDTH (sink)/2,
+                 GST_VIDEO_SINK_HEIGHT (sink)/2, 0, GL_LUMINANCE,
                  GL_UNSIGNED_BYTE, GST_BUFFER_DATA (buf) +
-                 sink->video_width * sink->video_height +
-                 sink->video_width/2 * sink->video_height/2);
+                 GST_VIDEO_SINK_WIDTH (sink) * GST_VIDEO_SINK_HEIGHT (sink) +
+                 GST_VIDEO_SINK_WIDTH (sink)/2 *
+                 GST_VIDEO_SINK_HEIGHT (sink)/2);
     glUniform1i (sink->v_loc, 2);
 
 }
 
 static void
-gl_draw (GstGLESPlugin *sink, GstBuffer *buf)
+gl_draw_fbo (GstGLESPlugin *sink, GstBuffer *buf)
 {
     GLfloat vVertices[] =
     {
@@ -163,7 +188,10 @@ gl_draw (GstGLESPlugin *sink, GstBuffer *buf)
     };
     GLushort indices[] = { 0, 1, 2, 0, 2, 3 };
 
-    glViewport (0, 0, GST_VIDEO_SINK_WIDTH (sink),
+    glBindFramebuffer (GL_FRAMEBUFFER, sink->framebuffer);
+    glUseProgram (sink->program);
+    //glViewport (result.x, result.y, result.w, result.h);
+    glViewport(0, 0, GST_VIDEO_SINK_WIDTH (sink),
                GST_VIDEO_SINK_HEIGHT (sink));
 
     glClear (GL_COLOR_BUFFER_BIT);
@@ -174,17 +202,74 @@ gl_draw (GstGLESPlugin *sink, GstBuffer *buf)
     glVertexAttribPointer (sink->texcoord_loc, 2, GL_FLOAT,
         GL_FALSE, 4 * sizeof (GLfloat), &vVertices[2]);
 
-
-    //glVertexAttribPointer (sink->position_loc, 3, GL_FLOAT, GL_FALSE, 0, vVertices);
     glEnableVertexAttribArray (sink->position_loc);
     glEnableVertexAttribArray (sink->texcoord_loc);
 
     gl_load_texture(sink, buf);
-    GLint line_height_loc = glGetUniformLocation(sink->program, "line_height");
+    GLint line_height_loc = glGetUniformLocation(sink->program,
+                                                 "line_height");
     glUniform1f(line_height_loc, 1.0/sink->video_height);
 
     glDrawElements (GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, indices);
+}
 
+void
+gl_draw_onscreen (GstGLESPlugin *sink)
+{
+    GLfloat vVertices[] =
+    {
+        -1.0f, -1.0f,
+        0.0f, 0.0f,
+
+        1.0f, -1.0f,
+        1.0f, 0.0f,
+
+        1.0f, 1.0f,
+        1.0f, 1.0f,
+
+        -1.0f, 1.0f,
+        0.0f, 1.0f,
+    };
+    GLushort indices[] = { 0, 1, 2, 0, 2, 3 };
+
+    GstVideoRectangle src;
+    GstVideoRectangle dst;
+    GstVideoRectangle result;
+
+    dst.x = 0;
+    dst.y = 0;
+    dst.w = sink->window_width;
+    dst.h = sink->window_height;
+
+    src.x = 0;
+    src.y = 0;
+    src.w = sink->video_width;
+    src.h = sink->video_height;
+
+    gst_video_sink_center_rect(src, dst, &result, TRUE);
+
+    glUseProgram (sink->copy_program);
+    glBindFramebuffer (GL_FRAMEBUFFER, 0);
+
+    glViewport (result.x, result.y, result.w, result.h);
+
+    glClear (GL_COLOR_BUFFER_BIT);
+
+    glVertexAttribPointer (sink->copy_position_loc, 2, GL_FLOAT,
+        GL_FALSE, 4 * sizeof (GLfloat), vVertices);
+
+    glVertexAttribPointer (sink->copy_texcoord_loc, 2, GL_FLOAT,
+        GL_FALSE, 4 * sizeof (GLfloat), &vVertices[2]);
+
+    glEnableVertexAttribArray (sink->copy_position_loc);
+    glEnableVertexAttribArray (sink->copy_texcoord_loc);
+
+
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture (GL_TEXTURE_2D, sink->copy_rgb_texture);
+    glUniform1i (sink->copy_rgb_loc, 3);
+
+    glDrawElements (GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, indices);
     eglSwapBuffers (sink->display, sink->surface);
 }
 
@@ -234,10 +319,12 @@ egl_init (GstGLESPlugin *sink)
     }
 
     if (num_configs != 1) {
-        GST_WARNING_OBJECT(sink, "Did not get exactly one config, but %d", num_configs);
+        GST_WARNING_OBJECT(sink, "Did not get exactly one config, but %d",
+                           num_configs);
     }
 
-    GST_DEBUG_OBJECT (sink, "Create EGL window surface");
+    GST_DEBUG_OBJECT (sink, "Create EGL window surface, "
+                      "display: %p", sink->x_display);
     sink->surface = eglCreateWindowSurface(sink->display, config,
                                      sink->x_window, NULL);
     if (sink->surface == EGL_NO_SURFACE) {
@@ -392,8 +479,8 @@ gst_gles_plugin_init (GstGLESPlugin * sink,
   sink->silent = FALSE;
   sink->initialized = FALSE;
 
-  gst_base_sink_set_max_lateness (GST_BASE_SINK (sink), -1);
-  gst_base_sink_set_qos_enabled(GST_BASE_SINK (sink), FALSE);
+  gst_base_sink_set_max_lateness (GST_BASE_SINK (sink), 20 * GST_MSECOND);
+  gst_base_sink_set_qos_enabled(GST_BASE_SINK (sink), TRUE);
 }
 
 static void
@@ -438,7 +525,7 @@ gst_gles_plugin_start (GstBaseSink *basesink)
 
     GST_LOG_OBJECT (basesink, "start in thread %p", g_thread_self());
 
-    GST_DEBUG_OBJECT(sink, "Initialized");
+    GST_DEBUG_OBJECT (sink, "Initialized");
 
     return TRUE;
 }
@@ -452,10 +539,10 @@ gst_gles_plugin_stop (GstBaseSink *basesink)
     GST_VIDEO_SINK_WIDTH (sink) = 0;
     GST_VIDEO_SINK_HEIGHT (sink)  = 0;
 
-    egl_close(sink);
+    egl_close (sink);
     x11_close (sink);
 
-    sink->initialized = 0;
+    sink->initialized = FALSE;
     GST_LOG_OBJECT (sink, "stopped");
 
     return TRUE;
@@ -467,7 +554,12 @@ gst_gles_plugin_set_caps (GstBaseSink *basesink, GstCaps *caps)
 {
   GstGLESPlugin *sink = GST_GLES_PLUGIN (basesink);
   GstVideoFormat fmt;
-  gint w, h, par_n, par_d;
+  guint display_par_n;
+  guint display_par_d;
+  gint par_n;
+  gint par_d;
+  gint w;
+  gint h;
 
   GST_LOG_OBJECT (sink, "caps: %" GST_PTR_FORMAT, caps);
 
@@ -476,6 +568,7 @@ gst_gles_plugin_set_caps (GstBaseSink *basesink, GstCaps *caps)
       return FALSE;
   }
 
+  /* retrieve pixel aspect ratio of encoded video */
   if (!gst_video_parse_caps_pixel_aspect_ratio (caps, &par_n, &par_d)) {
       GST_WARNING_OBJECT (sink, "no pixel aspect ratio");
       return FALSE;
@@ -487,11 +580,24 @@ gst_gles_plugin_set_caps (GstBaseSink *basesink, GstCaps *caps)
   GST_VIDEO_SINK_WIDTH (sink) = w;
   GST_VIDEO_SINK_HEIGHT (sink) = h;
 
-  sink->par_n = par_n;
-  sink->par_d = par_d;
+  /* calculate actual rendering pixel aspect ratio based on video pixel
+   * aspect ratio and display pixel aspect ratio */
+  /* FIXME: add display pixel aspect ratio as property to the plugin */
+  display_par_n = 1;
+  display_par_d = 1;
+
+  gst_video_calculate_display_ratio (&sink->par_n, &sink->par_d,
+                                     GST_VIDEO_SINK_WIDTH (sink),
+                                     GST_VIDEO_SINK_HEIGHT (sink),
+                                     par_n, par_d,
+                                     display_par_n, display_par_d);
+
+  sink->video_width = sink->video_width * par_n / par_d;
 
   GST_INFO_OBJECT (sink, "format                : %d", fmt);
-  GST_INFO_OBJECT (sink, "width x height        : %d x %d", w, h);
+  GST_INFO_OBJECT (sink, "encoded width x height: %d x %d", w, h);
+  GST_INFO_OBJECT (sink, "display width x height: %d x %d", sink->video_width,
+                   sink->video_height);
   GST_INFO_OBJECT (sink, "pixel-aspect-ratio    : %d/%d", par_d, par_n);
 
   return TRUE;
@@ -516,41 +622,73 @@ gst_gles_plugin_render (GstBaseSink *basesink, GstBuffer *buf)
         gint ret;
 
         GST_DEBUG_OBJECT(sink, "Initialize X11");
-        if(x11_init(sink, 720, 576) < 0) {
-            GST_ERROR_OBJECT(sink, "X11 init failed, abort");
+        sink->window_width = 720;
+        sink->window_height = 576;
+        if (x11_init (sink, sink->window_width, sink->window_height) < 0) {
+            GST_ERROR_OBJECT (sink, "X11 init failed, abort");
             return GST_FLOW_ERROR;
         }
 
-        GST_DEBUG_OBJECT(sink, "Initialize EGL");
-        if(egl_init(sink) < 0) {
-            GST_ERROR_OBJECT(sink, "EGL init failed, abort");
-            x11_close(sink);
+        GST_DEBUG_OBJECT (sink, "Initialize EGL");
+        if (egl_init (sink) < 0) {
+            GST_ERROR_OBJECT (sink, "EGL init failed, abort");
+            x11_close (sink);
             return GST_FLOW_ERROR;
         }
 
-        GST_DEBUG_OBJECT(sink, "Initialize GLES Shaders");
-        ret = gl_init_shader(sink);
+        GST_DEBUG_OBJECT (sink, "Initialize GLES Shaders");
+        ret = gl_init_shader (sink);
         if (ret < 0) {
-            GST_ERROR_OBJECT(sink, "Could not initialize shader: %d", ret);
-            egl_close(sink);
-            x11_close(sink);
+            GST_ERROR_OBJECT (sink, "Could not initialize shader: %d", ret);
+            egl_close (sink);
+            x11_close (sink);
+            sink->initialized = FALSE;
             return GST_FLOW_ERROR;
         }
 
-        GST_DEBUG_OBJECT(sink, "Initialize GLES Textures");
-        gl_init_textures(sink);
+        GST_DEBUG_OBJECT (sink, "Initialize GLES copy Shaders");
+        ret = gl_init_copy_shader (sink);
+        if (ret < 0) {
+            GST_ERROR_OBJECT (sink, "Could not initialize copy shader: %d",
+                              ret);
+            egl_close (sink);
+            x11_close (sink);
+            sink->initialized = FALSE;
+            return GST_FLOW_ERROR;
+        }
+
+        GST_DEBUG_OBJECT (sink, "Initialize GLES Textures");
+        gl_init_textures (sink);
+
+        /* generate the framebuffer object */
+        GST_DEBUG_OBJECT (sink, "Initialize FBO");
+        gl_gen_framebuffer (sink);
+
         sink->initialized = TRUE;
 
-        GST_DEBUG_OBJECT(sink, "Init done");
+        GST_DEBUG_OBJECT (sink, "Init done");
     }
 
-    /*
-    while (XPending (sink->x_display)) {   // check for events from the x-server
+    while (XPending (sink->x_display)) {// check for events from the x-server
         XEvent  xev;
         XNextEvent(sink->x_display, &xev);
-    }*/
 
-    gl_draw(sink, buf);
+        switch (xev.type) {
+        case ConfigureRequest:
+        case ConfigureNotify:
+            GST_DEBUG_OBJECT(sink, "XConfigure* Event: wxh: %dx%d",
+                             xev.xconfigure.width,
+                             xev.xconfigure.height);
+            sink->window_width = xev.xconfigure.width;
+            sink->window_height = xev.xconfigure.height;
+            break;
+        default:
+            break;
+        }
+    }
+
+    gl_draw_fbo (sink, buf);
+    gl_draw_onscreen (sink);
 
     return GST_FLOW_OK;
 }
@@ -561,6 +699,7 @@ gst_gles_plugin_finalize (GObject *gobject)
     GstGLESPlugin *plugin = (GstGLESPlugin *)gobject;
     egl_close(plugin);
     x11_close(plugin);
+    plugin->initialized = FALSE;
 }
 
 /* entry point to initialize the plug-in

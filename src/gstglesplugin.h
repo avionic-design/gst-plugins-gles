@@ -61,6 +61,9 @@ struct _GstGLESPlugin
   gint video_width;
   gint video_height;
 
+  gint window_width;
+  gint window_height;
+
   /* x11 context */
   Display *x_display;
   Window x_window;
@@ -70,13 +73,25 @@ struct _GstGLESPlugin
   GLuint vertex_shader;
   GLuint fragment_shader;
 
+  gint copy_program;
+  GLuint copy_vertex_shader;
+  GLuint copy_fragment_shader;
+
+  /* egl context */
   EGLDisplay display;
   EGLSurface surface;
   EGLContext context;
 
+  /* textures for yuv input planes */
   GLuint y_texture;
   GLuint u_texture;
   GLuint v_texture;
+
+  /* texture for the processed and converted image */
+  GLuint copy_rgb_texture;
+
+  /* framebuffer object */
+  GLuint framebuffer;
 
   gboolean initialized;
 
@@ -86,6 +101,10 @@ struct _GstGLESPlugin
   GLint y_loc;
   GLint u_loc;
   GLint v_loc;
+
+  GLint copy_position_loc;
+  GLint copy_texcoord_loc;
+  GLint copy_rgb_loc;
 
   /* properties */
   gboolean silent;

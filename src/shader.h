@@ -24,7 +24,8 @@
 #include "gstglesplugin.h"
 
 enum _Shaders {
-    SHADER_DEINT_LINEAR = 0
+    SHADER_DEINT_LINEAR = 0,
+    SHADER_COPY
 };
 typedef enum _Shaders Shaders;
 
@@ -33,4 +34,7 @@ typedef enum _Shaders Shaders;
  * returns 0 on succes, -1 on failure*/
 gint
 gl_init_shader (GstGLESPlugin *sink);
+
+gint
+gl_init_copy_shader (GstGLESPlugin *sink);
 #endif
