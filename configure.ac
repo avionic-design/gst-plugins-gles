@@ -14,6 +14,7 @@ AC_CONFIG_HEADERS([config.h])
 
 dnl required version of automake
 AM_INIT_AUTOMAKE([1.10])
+m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 dnl enable mainainer mode by default
 AM_MAINTAINER_MODE([enable])
