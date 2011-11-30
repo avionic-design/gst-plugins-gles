@@ -40,6 +40,7 @@
 
 #include <gst/gst.h>
 #include <gst/video/video.h>
+#include <gst/interfaces/xoverlay.h>
 
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
@@ -58,8 +59,8 @@ enum
   PROP_SILENT
 };
 
-GST_BOILERPLATE (GstGLESPlugin, gst_gles_plugin, GstVideoSink,
-    GST_TYPE_VIDEO_SINK);
+GST_BOILERPLATE_WITH_INTERFACE (GstGLESPlugin, gst_gles_plugin, GstVideoSink,
+    GST_TYPE_VIDEO_SINK, GstXOverlay, GST_TYPE_X_OVERLAY, gst_gles_xoverlay)
 
 static void gst_gles_plugin_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
@@ -75,6 +76,8 @@ static GstFlowReturn gst_gles_plugin_render (GstBaseSink * basesink,
 static GstFlowReturn gst_gles_plugin_preroll (GstBaseSink * basesink,
                                               GstBuffer * buf);
 static void gst_gles_plugin_finalize (GObject *gobject);
+static GstStateChangeReturn gst_gles_plugin_change_state (GstElement *element,
+                                                          GstStateChange transition);
 
 #define WxH ", width = (int) [ 16, 4096 ], height = (int) [ 16, 4096 ]"
 
@@ -82,7 +85,8 @@ static GstStaticPadTemplate gles_sink_factory =
         GST_STATIC_PAD_TEMPLATE ("sink",
                                  GST_PAD_SINK,
                                  GST_PAD_ALWAYS,
-                                 GST_STATIC_CAPS ( GST_VIDEO_CAPS_YUV("I420") WxH));
+                                 GST_STATIC_CAPS ( GST_VIDEO_CAPS_YUV("I420")
+                                                   WxH) );
 
 
 
@@ -412,13 +416,14 @@ x11_init (GstGLESPlugin *sink, gint width, gint height)
     XMapWindow (sink->x_display, sink->x_window);
     XStoreName (sink->x_display, sink->x_window, "GLESSink");
 
+    gst_x_overlay_got_window_handle (GST_X_OVERLAY (sink), sink->x_window);
+
     return 0;
 }
 
 static void
 x11_close (GstGLESPlugin *sink)
 {
-    GST_DEBUG_OBJECT(sink,"x11 close");
     if (sink->x_display) {
         XDestroyWindow(sink->x_display, sink->x_window);
         XCloseDisplay(sink->x_display);
@@ -433,6 +438,8 @@ static void
 gst_gles_plugin_base_init (gpointer gclass)
 {
   GstElementClass *element_class = GST_ELEMENT_CLASS (gclass);
+
+  element_class->change_state = gst_gles_plugin_change_state;
 
   gst_element_class_set_details_simple(element_class,
     "GLESPlugin sink",
@@ -603,6 +610,15 @@ gst_gles_plugin_set_caps (GstBaseSink *basesink, GstCaps *caps)
   return TRUE;
 }
 
+static GstStateChangeReturn
+gst_gles_plugin_change_state (GstElement *element, GstStateChange transition)
+{
+    GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
+    ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+
+    return ret;
+}
+
 static GstFlowReturn
 gst_gles_plugin_preroll (GstBaseSink * basesink, GstBuffer * buf)
 {
@@ -700,6 +716,33 @@ gst_gles_plugin_finalize (GObject *gobject)
     egl_close(plugin);
     x11_close(plugin);
     plugin->initialized = FALSE;
+}
+
+/* GstXOverlay Interface implementation */
+static void
+gst_gles_xoverlay_set_window_handle (GstXOverlay *overlay, guintptr handle)
+{
+    GstGLESPlugin *sink = GST_GLES_PLUGIN (overlay);
+
+    // destroy egl surface and x11 window
+    GST_ERROR_OBJECT (sink, "Setting window handle is not yet supported.");
+}
+
+static void
+gst_gles_xoverlay_interface_init (GstXOverlayClass *overlay_klass)
+{
+    GST_DEBUG_OBJECT(overlay_klass, "Init overlay");
+    overlay_klass->set_window_handle = gst_gles_xoverlay_set_window_handle;
+}
+
+static gboolean
+gst_gles_xoverlay_supported (GstGLESPlugin *sink,
+                             GType iface_type)
+{
+    GST_DEBUG_OBJECT(sink, "Interface XOverlay supprted");
+    g_return_val_if_fail (iface_type == GST_TYPE_X_OVERLAY, FALSE);
+
+    return TRUE;
 }
 
 /* entry point to initialize the plug-in
