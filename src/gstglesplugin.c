@@ -301,7 +301,6 @@ egl_init (GstGLESPlugin *sink)
     EGLint major;
     EGLint minor;
 
-    GST_DEBUG_OBJECT (sink, "Get EGL display");
     sink->display = eglGetDisplay((EGLNativeDisplayType) sink->x_display);
     if (sink->display == EGL_NO_DISPLAY) {
         GST_ERROR_OBJECT(sink, "Could not get EGL display");
@@ -328,7 +327,8 @@ egl_init (GstGLESPlugin *sink)
     }
 
     GST_DEBUG_OBJECT (sink, "Create EGL window surface, "
-                      "display: %p", sink->x_display);
+                      "display: %p, x-display: %p, config: %p", sink->display,
+                      sink->x_display, config);
     sink->surface = eglCreateWindowSurface(sink->display, config,
                                      sink->x_window, NULL);
     if (sink->surface == EGL_NO_SURFACE) {
@@ -359,7 +359,6 @@ egl_close(GstGLESPlugin *sink)
 {
     GLuint textures[] = { 0, 1, 2 };
 
-    GST_DEBUG_OBJECT (sink,"egl close");
     if (sink->initialized) {
         glDeleteTextures (3, textures);
         glDeleteShader (sink->vertex_shader);
@@ -483,11 +482,17 @@ static void
 gst_gles_plugin_init (GstGLESPlugin * sink,
     GstGLESPluginClass * gclass)
 {
-  sink->silent = FALSE;
-  sink->initialized = FALSE;
+    Status ret;
+    sink->silent = FALSE;
+    sink->initialized = FALSE;
 
-  gst_base_sink_set_max_lateness (GST_BASE_SINK (sink), 20 * GST_MSECOND);
-  gst_base_sink_set_qos_enabled(GST_BASE_SINK (sink), TRUE);
+    ret = XInitThreads();
+    if (ret == 0) {
+        GST_ERROR_OBJECT(sink, "XInitThreads failed");
+    }
+
+    gst_base_sink_set_max_lateness (GST_BASE_SINK (sink), 20 * GST_MSECOND);
+    gst_base_sink_set_qos_enabled(GST_BASE_SINK (sink), TRUE);
 }
 
 static void
