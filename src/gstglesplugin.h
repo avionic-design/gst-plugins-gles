@@ -55,6 +55,7 @@ typedef struct _GstGLESPluginClass GstGLESPluginClass;
 
 typedef struct _GstGLESWindow      GstGLESWindow;
 typedef struct _GstGLESContext     GstGLESContext;
+typedef struct _GstGLESThread      GstGLESThread;
 
 struct _GstGLESWindow
 {
@@ -90,12 +91,28 @@ struct _GstGLESContext
     GLuint framebuffer;
 };
 
+struct _GstGLESThread
+{
+    /* thread context */
+    GThread *handle;
+    GCond *render_signal;
+    GCond *data_signal;
+    GMutex *render_lock;
+    GMutex *data_lock;
+    gboolean running;
+
+    GstGLESContext gles;
+
+    /* render data */
+    GstBuffer *buf;
+};
+
 struct _GstGLESPlugin
 {
   GstVideoSink basesink;
 
   GstGLESWindow x11;
-  GstGLESContext gles;
+  GstGLESThread gl_thread;
 
   gint par_n;
   gint par_d;

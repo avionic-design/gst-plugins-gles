@@ -78,6 +78,8 @@ static GstFlowReturn gst_gles_plugin_preroll (GstBaseSink * basesink,
 static void gst_gles_plugin_finalize (GObject *gobject);
 static GstStateChangeReturn gst_gles_plugin_change_state (GstElement *element,
                                                           GstStateChange transition);
+static gint setup_gl_context (GstGLESPlugin *sink);
+static gpointer gl_thread_proc (gpointer data);
 
 #define WxH ", width = (int) [ 16, 4096 ], height = (int) [ 16, 4096 ]"
 
@@ -109,19 +111,20 @@ gl_create_texture()
 static void
 gl_gen_framebuffer(GstGLESPlugin *sink)
 {
-    glGenFramebuffers (1, &sink->gles.framebuffer);
+    GstGLESContext *gles = &sink->gl_thread.gles;
+    glGenFramebuffers (1, &gles->framebuffer);
 
-    sink->gles.rgb_tex.id = gl_create_texture();
-    if (!sink->gles.rgb_tex.id)
+    gles->rgb_tex.id = gl_create_texture();
+    if (!gles->rgb_tex.id)
         GST_ERROR_OBJECT (sink, "Could not create RGB texture");
 
     glTexImage2D (GL_TEXTURE_2D, 0, GL_RGB, GST_VIDEO_SINK_WIDTH (sink),
                   GST_VIDEO_SINK_HEIGHT (sink), 0, GL_RGB,
                   GL_UNSIGNED_BYTE, NULL);
 
-    glBindFramebuffer (GL_FRAMEBUFFER, sink->gles.framebuffer);
+    glBindFramebuffer (GL_FRAMEBUFFER, gles->framebuffer);
     glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                            GL_TEXTURE_2D, sink->gles.rgb_tex.id,
+                            GL_TEXTURE_2D, gles->rgb_tex.id,
                             0);
 }
 
@@ -130,35 +133,36 @@ gl_init_textures (GstGLESPlugin *sink)
 {
     //glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-    sink->gles.y_tex.id = gl_create_texture();
-    sink->gles.u_tex.id = gl_create_texture();
-    sink->gles.v_tex.id = gl_create_texture();
+    sink->gl_thread.gles.y_tex.id = gl_create_texture();
+    sink->gl_thread.gles.u_tex.id = gl_create_texture();
+    sink->gl_thread.gles.v_tex.id = gl_create_texture();
 }
 
 static void
 gl_load_texture (GstGLESPlugin *sink, GstBuffer *buf)
 {
+    GstGLESContext *gles = &sink->gl_thread.gles;
     /* y component */
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture (GL_TEXTURE_2D, sink->gles.y_tex.id);
+    glBindTexture (GL_TEXTURE_2D, gles->y_tex.id);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, GST_VIDEO_SINK_WIDTH (sink),
                  GST_VIDEO_SINK_HEIGHT (sink), 0, GL_LUMINANCE,
                  GL_UNSIGNED_BYTE, GST_BUFFER_DATA (buf));
-    glUniform1i (sink->gles.y_tex.loc, 0);
+    glUniform1i (gles->y_tex.loc, 0);
 
     /* u component */
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture (GL_TEXTURE_2D, sink->gles.u_tex.id);
+    glBindTexture (GL_TEXTURE_2D, gles->u_tex.id);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE,
                  GST_VIDEO_SINK_WIDTH (sink)/2,
                  GST_VIDEO_SINK_HEIGHT (sink)/2, 0, GL_LUMINANCE,
                  GL_UNSIGNED_BYTE, GST_BUFFER_DATA (buf) +
                  GST_VIDEO_SINK_WIDTH (sink) * GST_VIDEO_SINK_HEIGHT (sink));
-    glUniform1i (sink->gles.u_tex.loc, 1);
+    glUniform1i (gles->u_tex.loc, 1);
 
     /* v component */
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture (GL_TEXTURE_2D, sink->gles.v_tex.id);
+    glBindTexture (GL_TEXTURE_2D, gles->v_tex.id);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE,
                  GST_VIDEO_SINK_WIDTH (sink)/2,
                  GST_VIDEO_SINK_HEIGHT (sink)/2, 0, GL_LUMINANCE,
@@ -166,7 +170,7 @@ gl_load_texture (GstGLESPlugin *sink, GstBuffer *buf)
                  GST_VIDEO_SINK_WIDTH (sink) * GST_VIDEO_SINK_HEIGHT (sink) +
                  GST_VIDEO_SINK_WIDTH (sink)/2 *
                  GST_VIDEO_SINK_HEIGHT (sink)/2);
-    glUniform1i (sink->gles.v_tex.loc, 2);
+    glUniform1i (gles->v_tex.loc, 2);
 }
 
 static void
@@ -187,29 +191,30 @@ gl_draw_fbo (GstGLESPlugin *sink, GstBuffer *buf)
         0.0f, 0.0f,
     };
     GLushort indices[] = { 0, 1, 2, 0, 2, 3 };
+    GstGLESContext *gles = &sink->gl_thread.gles;
 
-    glBindFramebuffer (GL_FRAMEBUFFER, sink->gles.framebuffer);
-    glUseProgram (sink->gles.deinterlace.program);
+    glBindFramebuffer (GL_FRAMEBUFFER, gles->framebuffer);
+    glUseProgram (gles->deinterlace.program);
 
     glViewport(0, 0, GST_VIDEO_SINK_WIDTH (sink),
                GST_VIDEO_SINK_HEIGHT (sink));
 
     glClear (GL_COLOR_BUFFER_BIT);
 
-    glVertexAttribPointer (sink->gles.deinterlace.position_loc, 2,
+    glVertexAttribPointer (gles->deinterlace.position_loc, 2,
                            GL_FLOAT, GL_FALSE, 4 * sizeof (GLfloat),
                            vVertices);
 
-    glVertexAttribPointer (sink->gles.deinterlace.texcoord_loc, 2,
+    glVertexAttribPointer (gles->deinterlace.texcoord_loc, 2,
                            GL_FLOAT, GL_FALSE, 4 * sizeof (GLfloat),
                            &vVertices[2]);
 
-    glEnableVertexAttribArray (sink->gles.deinterlace.position_loc);
-    glEnableVertexAttribArray (sink->gles.deinterlace.texcoord_loc);
+    glEnableVertexAttribArray (gles->deinterlace.position_loc);
+    glEnableVertexAttribArray (gles->deinterlace.texcoord_loc);
 
     gl_load_texture(sink, buf);
     GLint line_height_loc =
-            glGetUniformLocation(sink->gles.deinterlace.program,
+            glGetUniformLocation(gles->deinterlace.program,
                                  "line_height");
     glUniform1f(line_height_loc, 1.0/sink->video_height);
 
@@ -239,6 +244,8 @@ gl_draw_onscreen (GstGLESPlugin *sink)
     GstVideoRectangle dst;
     GstVideoRectangle result;
 
+    GstGLESContext *gles = &sink->gl_thread.gles;
+
     dst.x = 0;
     dst.y = 0;
     dst.w = sink->x11.width;
@@ -251,32 +258,52 @@ gl_draw_onscreen (GstGLESPlugin *sink)
 
     gst_video_sink_center_rect(src, dst, &result, TRUE);
 
-    glUseProgram (sink->gles.scale.program);
+    glUseProgram (gles->scale.program);
     glBindFramebuffer (GL_FRAMEBUFFER, 0);
 
     glViewport (result.x, result.y, result.w, result.h);
 
     glClear (GL_COLOR_BUFFER_BIT);
 
-    glVertexAttribPointer (sink->gles.scale.position_loc, 2, GL_FLOAT,
+    glVertexAttribPointer (gles->scale.position_loc, 2, GL_FLOAT,
         GL_FALSE, 4 * sizeof (GLfloat), vVertices);
 
-    glVertexAttribPointer (sink->gles.scale.texcoord_loc, 2, GL_FLOAT,
+    glVertexAttribPointer (gles->scale.texcoord_loc, 2, GL_FLOAT,
         GL_FALSE, 4 * sizeof (GLfloat), &vVertices[2]);
 
-    glEnableVertexAttribArray (sink->gles.scale.position_loc);
-    glEnableVertexAttribArray (sink->gles.scale.texcoord_loc);
+    glEnableVertexAttribArray (gles->scale.position_loc);
+    glEnableVertexAttribArray (gles->scale.texcoord_loc);
 
 
     glActiveTexture(GL_TEXTURE3);
-    glBindTexture (GL_TEXTURE_2D, sink->gles.rgb_tex.id);
-    glUniform1i (sink->gles.rgb_tex.loc, 3);
+    glBindTexture (GL_TEXTURE_2D, gles->rgb_tex.id);
+    glUniform1i (gles->rgb_tex.loc, 3);
 
     glDrawElements (GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, indices);
-    eglSwapBuffers (sink->gles.display, sink->gles.surface);
+    eglSwapBuffers (gles->display, gles->surface);
 }
 
 /* EGL implementation */
+
+static void
+init_gl_thread (GstGLESPlugin *sink)
+{
+    GstGLESThread *thread = &sink->gl_thread;
+    GError *err = NULL;
+
+    GST_DEBUG_OBJECT(sink, "Setup thread for gl processing");
+
+    if (!g_thread_get_initialized())
+        g_thread_init (NULL);
+
+    thread->handle = g_thread_create(gl_thread_proc,
+                                     sink, TRUE, &err);
+
+
+    if (err || !sink->gl_thread.handle) {
+        GST_ERROR_OBJECT(sink, "Could not create gl thread");
+    }
+}
 
 static gint
 egl_init (GstGLESPlugin *sink)
@@ -300,22 +327,24 @@ egl_init (GstGLESPlugin *sink)
     EGLint major;
     EGLint minor;
 
-    sink->gles.display = eglGetDisplay((EGLNativeDisplayType)
+    GstGLESContext *gles = &sink->gl_thread.gles;
+
+    gles->display = eglGetDisplay((EGLNativeDisplayType)
                                           sink->x11.display);
-    if (sink->gles.display == EGL_NO_DISPLAY) {
+    if (gles->display == EGL_NO_DISPLAY) {
         GST_ERROR_OBJECT(sink, "Could not get EGL display");
         return -1;
     }
 
     GST_DEBUG_OBJECT (sink, "Initialize EGL");
-    if (!eglInitialize(sink->gles.display, &major, &minor)) {
+    if (!eglInitialize(gles->display, &major, &minor)) {
         GST_ERROR_OBJECT(sink, "Could not initialize EGL context");
         return -1;
     }
     GST_DEBUG_OBJECT (sink, "Have EGL version: %d.%d", major, minor);
 
     GST_DEBUG_OBJECT (sink, "Choose EGL config");
-    if (!eglChooseConfig(sink->gles.display, configAttribs, &config, 1,
+    if (!eglChooseConfig(gles->display, configAttribs, &config, 1,
                         &num_configs)) {
         GST_ERROR_OBJECT(sink, "Could not choose EGL config");
         return -1;
@@ -328,31 +357,31 @@ egl_init (GstGLESPlugin *sink)
 
     GST_DEBUG_OBJECT (sink, "Create EGL window surface, "
                       "display: %p, x-display: %p, config: %p",
-                      sink->gles.display,
+                      gles->display,
                       sink->x11.display, config);
-    sink->gles.surface = eglCreateWindowSurface(sink->gles.display, config,
+    gles->surface = eglCreateWindowSurface(gles->display, config,
                                      sink->x11.window, NULL);
-    if (sink->gles.surface == EGL_NO_SURFACE) {
+    if (gles->surface == EGL_NO_SURFACE) {
         GST_ERROR_OBJECT (sink, "Could not create EGL surface");
         return -1;
     }
 
     GST_DEBUG_OBJECT (sink, "Create EGL context");
-    sink->gles.context = eglCreateContext(sink->gles.display, config,
+    gles->context = eglCreateContext(gles->display, config,
                                      EGL_NO_CONTEXT, contextAttribs);
-    if (sink->gles.context == EGL_NO_CONTEXT) {
+    if (gles->context == EGL_NO_CONTEXT) {
         GST_ERROR_OBJECT(sink, "Could not create EGL context");
         return -1;
     }
 
     GST_DEBUG_OBJECT (sink, "Switch EGL context to current");
-    if (!eglMakeCurrent(sink->gles.display, sink->gles.surface,
-                        sink->gles.surface, sink->gles.context)) {
+    if (!eglMakeCurrent(gles->display, gles->surface,
+                        gles->surface, gles->context)) {
         GST_ERROR_OBJECT(sink, "Could not set EGL context to current");
         return -1;
     }
 
-    sink->gles.initialized = TRUE;
+    gles->initialized = TRUE;
 
     return 0;
 }
@@ -436,6 +465,132 @@ x11_close (GstGLESPlugin *sink)
     }
 }
 
+/* gl thread main function */
+static gpointer
+gl_thread_proc (gpointer data)
+{
+    GstGLESPlugin *sink = GST_GLES_PLUGIN (data);
+    GstGLESThread *thread = &sink->gl_thread;
+    GstGLESContext *gles = &thread->gles;
+
+    GST_DEBUG_OBJECT (sink, "setup gl context");
+    thread->running = setup_gl_context (sink) == 0;
+
+    g_mutex_lock (thread->data_lock);
+    while (thread->running) {
+        /* wait till gst_gles_plugin_render has some data for us */
+        g_cond_wait (thread->data_signal, thread->data_lock);
+        if (thread->buf) {
+            gl_draw_fbo (sink, thread->buf);
+            gl_draw_onscreen (sink);
+        }
+
+        /* signal gst_gles_plugin_render that we are done */
+        g_mutex_lock (thread->render_lock);
+        g_cond_signal (thread->render_signal);
+        g_mutex_unlock (thread->render_lock);
+
+        /* check for events from the x-server */
+        while (XPending (sink->x11.display)) {
+            XEvent  xev;
+            XNextEvent(sink->x11.display, &xev);
+
+            switch (xev.type) {
+            case ConfigureRequest:
+            case ConfigureNotify:
+                GST_DEBUG_OBJECT(sink, "XConfigure* Event: wxh: %dx%d",
+                                 xev.xconfigure.width,
+                                 xev.xconfigure.height);
+                sink->x11.width = xev.xconfigure.width;
+                sink->x11.height = xev.xconfigure.height;
+                break;
+            default:
+                break;
+            }
+        }
+    }
+    g_mutex_unlock (thread->data_lock);
+
+    egl_close(gles);
+    x11_close(sink);
+    return 0;
+}
+
+static gint
+setup_gl_context (GstGLESPlugin *sink)
+{
+    GstGLESContext *gles = &sink->gl_thread.gles;
+    gint ret;
+
+    GST_DEBUG_OBJECT(sink, "Initialize X11");
+    sink->x11.width = 720;
+    sink->x11.height = 576;
+    if (x11_init (sink, sink->x11.width, sink->x11.height) < 0) {
+        GST_ERROR_OBJECT (sink, "X11 init failed, abort");
+        return -ENOMEM;
+    }
+
+    GST_DEBUG_OBJECT (sink, "Initialize EGL");
+    if (egl_init (sink) < 0) {
+        GST_ERROR_OBJECT (sink, "EGL init failed, abort");
+        x11_close (sink);
+        return -ENOMEM;
+    }
+
+    GST_DEBUG_OBJECT (sink, "Initialize GLES Shaders");
+    ret = gl_init_shader (GST_ELEMENT (sink), &gles->deinterlace,
+                          SHADER_DEINT_LINEAR);
+    if (ret < 0) {
+        GST_ERROR_OBJECT (sink, "Could not initialize shader: %d", ret);
+        egl_close (&sink->gl_thread.gles);
+        x11_close (sink);
+        return -ENOMEM;
+    }
+    gles->y_tex.loc = glGetUniformLocation(gles->deinterlace.program,
+                                           "s_ytex");
+    gles->u_tex.loc = glGetUniformLocation(gles->deinterlace.program,
+                                           "s_utex");
+    gles->v_tex.loc = glGetUniformLocation(gles->deinterlace.program,
+                                           "s_vtex");
+
+    ret = gl_init_shader (GST_ELEMENT (sink), &gles->scale, SHADER_COPY);
+    if (ret < 0) {
+        GST_ERROR_OBJECT (sink, "Could not initialize shader: %d", ret);
+        egl_close (gles);
+        x11_close (sink);
+        return -ENOMEM;
+    }
+    gles->rgb_tex.loc = glGetUniformLocation(gles->scale.program, "s_tex");
+
+    GST_DEBUG_OBJECT (sink, "Initialize GLES Textures");
+    gl_init_textures (sink);
+
+    /* generate the framebuffer object */
+    GST_DEBUG_OBJECT (sink, "Initialize FBO");
+    gl_gen_framebuffer (sink);
+
+    gles->initialized = TRUE;
+
+    GST_DEBUG_OBJECT (sink, "Init done");
+
+    return 0;
+}
+
+static void
+stop_gl_thread (GstGLESPlugin *sink)
+{
+    GST_DEBUG_OBJECT (sink, "stopping gl thread");
+    if (sink->gl_thread.running) {
+        sink->gl_thread.running = FALSE;
+        sink->gl_thread.buf = NULL;
+
+        g_mutex_lock (sink->gl_thread.data_lock);
+        g_cond_signal (sink->gl_thread.data_signal);
+        g_mutex_unlock (sink->gl_thread.data_lock);
+
+        g_thread_join(sink->gl_thread.handle);
+    }
+}
 
 /* GObject vmethod implementations */
 
@@ -488,9 +643,16 @@ static void
 gst_gles_plugin_init (GstGLESPlugin * sink,
     GstGLESPluginClass * gclass)
 {
+    GstGLESThread *thread = &sink->gl_thread;
     Status ret;
+
     sink->silent = FALSE;
-    sink->gles.initialized = FALSE;
+    sink->gl_thread.gles.initialized = FALSE;
+
+    thread->data_lock = g_mutex_new();
+    thread->render_lock = g_mutex_new();
+    thread->data_signal = g_cond_new();
+    thread->render_signal = g_cond_new();
 
     ret = XInitThreads();
     if (ret == 0) {
@@ -553,11 +715,10 @@ gst_gles_plugin_stop (GstBaseSink *basesink)
 {
     GstGLESPlugin *sink = GST_GLES_PLUGIN (basesink);
 
+    stop_gl_thread (sink);
+
     GST_VIDEO_SINK_WIDTH (sink) = 0;
     GST_VIDEO_SINK_HEIGHT (sink)  = 0;
-
-    egl_close (&sink->gles);
-    x11_close (sink);
 
     GST_LOG_OBJECT (sink, "stopped");
 
@@ -625,14 +786,17 @@ gst_gles_plugin_change_state (GstElement *element, GstStateChange transition)
 {
     GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
     ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
-
     return ret;
 }
 
 static GstFlowReturn
 gst_gles_plugin_preroll (GstBaseSink * basesink, GstBuffer * buf)
 {
-    GST_LOG_OBJECT (basesink, "preroll");
+    GstGLESPlugin *sink = GST_GLES_PLUGIN (basesink);
+    GST_LOG_OBJECT (sink, "preroll");
+    if (!sink->gl_thread.running) {
+        init_gl_thread(sink);
+    }
     return GST_FLOW_OK;
 }
 
@@ -640,99 +804,57 @@ static GstFlowReturn
 gst_gles_plugin_render (GstBaseSink *basesink, GstBuffer *buf)
 {
     GstGLESPlugin *sink = GST_GLES_PLUGIN (basesink);
+    GstGLESThread *thread = &sink->gl_thread;
+    GTimeVal timeout;
+    gboolean ret = TRUE;
 
-    /* FIXME: this shouldn't be done here, but in _start() due to _start
-     *        being in a different thread this leads to problems. has to be
-     *        investigated further. */
-    if(!sink->gles.initialized) {
-        gint ret;
+    g_mutex_lock (thread->data_lock);
+    thread->buf = buf;
+    g_cond_signal (thread->data_signal);
+    g_mutex_unlock (thread->data_lock);
 
-        GST_DEBUG_OBJECT(sink, "Initialize X11");
-        sink->x11.width = 720;
-        sink->x11.height = 576;
-        if (x11_init (sink, sink->x11.width, sink->x11.height) < 0) {
-            GST_ERROR_OBJECT (sink, "X11 init failed, abort");
-            return GST_FLOW_ERROR;
-        }
+    g_mutex_lock (thread->render_lock);
 
-        GST_DEBUG_OBJECT (sink, "Initialize EGL");
-        if (egl_init (sink) < 0) {
-            GST_ERROR_OBJECT (sink, "EGL init failed, abort");
-            x11_close (sink);
-            return GST_FLOW_ERROR;
-        }
+#if 1
+    g_cond_wait (thread->render_signal, thread->render_lock);
+#else
+    g_get_current_time (&timeout);
+    g_time_val_add (&timeout, 500);
+    /* FIXME: timed_wait always fails. */
+    ret = g_cond_timed_wait (thread->render_signal, thread->render_lock,
+                             &timeout);
+#endif
+    g_mutex_unlock (thread->render_lock);
 
-        GST_DEBUG_OBJECT (sink, "Initialize GLES Shaders");
-        ret = gl_init_shader (GST_ELEMENT (sink), &sink->gles.deinterlace,
-                              SHADER_DEINT_LINEAR);
-        if (ret < 0) {
-            GST_ERROR_OBJECT (sink, "Could not initialize shader: %d", ret);
-            egl_close (&sink->gles);
-            x11_close (sink);
-            return GST_FLOW_ERROR;
-        }
-        sink->gles.y_tex.loc =
-                glGetUniformLocation(sink->gles.deinterlace.program, "s_ytex");
-        sink->gles.u_tex.loc =
-                glGetUniformLocation(sink->gles.deinterlace.program, "s_utex");
-        sink->gles.v_tex.loc =
-                glGetUniformLocation(sink->gles.deinterlace.program, "s_vtex");
+    GST_DEBUG_OBJECT (basesink, "Render %s", ret ? "done" : "with timeout");
 
-        ret = gl_init_shader (GST_ELEMENT (sink), &sink->gles.scale,
-                              SHADER_COPY);
-        if (ret < 0) {
-            GST_ERROR_OBJECT (sink, "Could not initialize shader: %d", ret);
-            egl_close (&sink->gles);
-            x11_close (sink);
-            return GST_FLOW_ERROR;
-        }
-        sink->gles.rgb_tex.loc =
-                glGetUniformLocation(sink->gles.scale.program, "s_tex");
-
-
-        GST_DEBUG_OBJECT (sink, "Initialize GLES Textures");
-        gl_init_textures (sink);
-
-        /* generate the framebuffer object */
-        GST_DEBUG_OBJECT (sink, "Initialize FBO");
-        gl_gen_framebuffer (sink);
-
-        sink->gles.initialized = TRUE;
-
-        GST_DEBUG_OBJECT (sink, "Init done");
-    }
-
-    while (XPending (sink->x11.display)) {// check for events from the x-server
-        XEvent  xev;
-        XNextEvent(sink->x11.display, &xev);
-
-        switch (xev.type) {
-        case ConfigureRequest:
-        case ConfigureNotify:
-            GST_DEBUG_OBJECT(sink, "XConfigure* Event: wxh: %dx%d",
-                             xev.xconfigure.width,
-                             xev.xconfigure.height);
-            sink->x11.width = xev.xconfigure.width;
-            sink->x11.height = xev.xconfigure.height;
-            break;
-        default:
-            break;
-        }
-    }
-
-    gl_draw_fbo (sink, buf);
-    gl_draw_onscreen (sink);
-
-    return GST_FLOW_OK;
+    return ret ? GST_FLOW_OK : GST_FLOW_ERROR;
 }
 
 static void
 gst_gles_plugin_finalize (GObject *gobject)
 {
     GstGLESPlugin *plugin = (GstGLESPlugin *)gobject;
-    egl_close(&plugin->gles);
-    x11_close(plugin);
-    plugin->gles.initialized = FALSE;
+    GstGLESThread *thread = &plugin->gl_thread;
+
+    stop_gl_thread (plugin);
+
+    if (thread->data_lock) {
+        g_mutex_free(thread->data_lock);
+        thread->data_lock = NULL;
+    }
+    if (thread->render_lock) {
+        g_mutex_free(thread->render_lock);
+        thread->render_lock = NULL;
+    }
+    if (thread->data_signal) {
+        g_cond_free(thread->data_signal);
+        thread->data_signal = NULL;
+    }
+    if (thread->render_signal) {
+        g_cond_free(thread->render_signal);
+        thread->render_signal = NULL;
+    }
 }
 
 /* GstXOverlay Interface implementation */
