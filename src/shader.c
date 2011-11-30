@@ -45,7 +45,7 @@ static const gchar* shader_basenames[] = {
 #define VERTEX_SHADER_BASENAME "vertex"
 
 static GLuint
-gl_load_binary_shader(GstGLESPlugin *sink,
+gl_load_binary_shader(GstElement *sink,
                       const char *filename, GLenum type)
 {
     GCancellable *cancellable;
@@ -93,7 +93,7 @@ cleanup:
 /* load and compile a shader src into a
  * shader program */
 static GLuint
-gl_load_source_shader (GstGLESPlugin *sink,
+gl_load_source_shader (GstElement *sink,
              const char *shader_src, GLenum type)
 {
     GLuint shader;
@@ -148,7 +148,7 @@ gl_load_source_shader (GstGLESPlugin *sink,
  * If no binary is found the source file is taken and compiled at
  * runtime. */
 static GLuint
-gl_load_shader (GstGLESPlugin *sink, const gchar *basename, const GLenum type)
+gl_load_shader (GstElement *sink, const gchar *basename, const GLenum type)
 {
     GLuint shader;
     gchar *filename;
@@ -175,156 +175,99 @@ gl_load_shader (GstGLESPlugin *sink, const gchar *basename, const GLenum type)
  * Vertex shader is a predefined default, fragment shader can be configured
  * through process_type */
 static gint
-gl_load_shaders (GstGLESPlugin *sink, Shaders process_type)
+gl_load_shaders (GstElement *sink, GstGLESShader *shader,
+                 Shaders process_type)
 {
-    sink->vertex_shader = gl_load_shader (sink, VERTEX_SHADER_BASENAME,
+    shader->vertex_shader = gl_load_shader (sink, VERTEX_SHADER_BASENAME,
                                           GL_VERTEX_SHADER);
-    if (!sink->vertex_shader)
+    if (!shader->vertex_shader)
         return -EINVAL;
 
-    sink->fragment_shader = gl_load_shader (sink,
+    shader->fragment_shader = gl_load_shader (sink,
                                             shader_basenames[process_type],
                                             GL_FRAGMENT_SHADER);
-    if (!sink->fragment_shader)
-        return -EINVAL;
-
-    sink->copy_vertex_shader = gl_load_shader (sink, VERTEX_SHADER_BASENAME,
-                                               GL_VERTEX_SHADER);
-    if (!sink->copy_vertex_shader)
-        return -EINVAL;
-
-    sink->copy_fragment_shader =
-            gl_load_shader (sink, shader_basenames[SHADER_COPY],
-                            GL_FRAGMENT_SHADER);
-    if (!sink->copy_fragment_shader)
+    if (!shader->fragment_shader)
         return -EINVAL;
 
     return 0;
 }
 
 gint
-gl_init_copy_shader (GstGLESPlugin *sink)
+gl_init_shader (GstElement *sink, GstGLESShader *shader,
+                Shaders process_type)
 {
-    GLint linked;
     gint ret;
+    gint linked;
 
-    GST_DEBUG_OBJECT(sink, "Create copy Program");
-    sink->copy_program = glCreateProgram();
-    if(!sink->copy_program) {
+    GST_DEBUG_OBJECT(sink, "Create shader Program");
+    shader->program = glCreateProgram();
+    if(!shader->program) {
         GST_ERROR_OBJECT(sink, "Could not create GL program");
         return -ENOMEM;
     }
 
-    GST_DEBUG_OBJECT(sink, "Attach vertex shader to copy program");
-    glAttachShader(sink->copy_program, sink->copy_vertex_shader);
-    GST_DEBUG_OBJECT(sink, "Attach copy shader to copy program");
-    glAttachShader(sink->copy_program, sink->copy_fragment_shader);
-    GST_DEBUG_OBJECT(sink, "Bind vPosition to copy program");
-    glBindAttribLocation(sink->copy_program, 0, "vPosition");
-
-    GST_DEBUG_OBJECT(sink, "Link Copy Program");
-    glLinkProgram(sink->copy_program);
-
-    /* check linker status */
-    GST_DEBUG_OBJECT(sink, "Get Linker Result");
-    glGetProgramiv(sink->copy_program, GL_LINK_STATUS, &linked);
-    if(!linked) {
-        GST_ERROR_OBJECT(sink, "Linker failure");
-        GLint info_len = 0;
-
-        glGetProgramiv(sink->copy_program, GL_INFO_LOG_LENGTH, &info_len);
-
-        if(info_len > 1) {
-            char *info_log = malloc(sizeof(char) * info_len);
-            glGetProgramInfoLog(sink->copy_program, info_len, NULL, info_log);
-
-            GST_ERROR_OBJECT(sink, "Failed to link GL program: %s", info_log);
-            free(info_log);
-        }
-
-        glDeleteProgram(sink->copy_program);
-        return -EINVAL;
-    }
-
-    glUseProgram(sink->copy_program);
-
-    sink->copy_position_loc = glGetAttribLocation(sink->copy_program,
-                                                  "vPosition");
-    sink->copy_texcoord_loc = glGetAttribLocation(sink->copy_program,
-                                                  "aTexcoord");
-
-    sink->copy_rgb_loc = glGetUniformLocation(sink->copy_program, "s_tex");
-
-    glClearColor(0.0, 0.0, 0.0, 1.0);
-
-    GST_DEBUG_OBJECT(sink, "GLES init done");
-}
-
-gint
-gl_init_shader (GstGLESPlugin *sink)
-{
-    GLuint program;
-    GLint linked;
-    gint ret;
-
     /* load the shaders */
     GST_DEBUG_OBJECT(sink, "Load vertex and fragment shader");
-    ret = gl_load_shaders(sink, SHADER_DEINT_LINEAR);
+    ret = gl_load_shaders(sink, shader, process_type);
     if(ret < 0) {
         GST_ERROR_OBJECT(sink, "Could not create GL shaders: %d", ret);
         return ret;
     }
 
-    GST_DEBUG_OBJECT(sink, "Create Program");
-    program = glCreateProgram();
-    if(!program) {
-        GST_ERROR_OBJECT(sink, "Could not create GL program");
-        return -ENOMEM;
-    }
+    GST_DEBUG_OBJECT(sink, "Attach vertex shader to copy program");
+    glAttachShader(shader->program, shader->vertex_shader);
+    GST_DEBUG_OBJECT(sink, "Attach copy shader to copy program");
+    glAttachShader(shader->program, shader->fragment_shader);
+    GST_DEBUG_OBJECT(sink, "Bind vPosition to copy program");
+    glBindAttribLocation(shader->program, 0, "vPosition");
 
-    GST_DEBUG_OBJECT(sink, "Attach vertex shader");
-    glAttachShader(program, sink->vertex_shader);
-    GST_DEBUG_OBJECT(sink, "Attach fragment shader");
-    glAttachShader(program, sink->fragment_shader);
-    GST_DEBUG_OBJECT(sink, "Bind vPosition");
-    glBindAttribLocation(program, 0, "vPosition");
-
-    GST_DEBUG_OBJECT(sink, "Link Program");
-    glLinkProgram(program);
+    GST_DEBUG_OBJECT(sink, "Link Copy Program");
+    glLinkProgram(shader->program);
 
     /* check linker status */
     GST_DEBUG_OBJECT(sink, "Get Linker Result");
-    glGetProgramiv(program, GL_LINK_STATUS, &linked);
+    glGetProgramiv(shader->program, GL_LINK_STATUS, &linked);
     if(!linked) {
         GST_ERROR_OBJECT(sink, "Linker failure");
         GLint info_len = 0;
 
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_len);
+        glGetProgramiv(shader->program, GL_INFO_LOG_LENGTH, &info_len);
 
         if(info_len > 1) {
             char *info_log = malloc(sizeof(char) * info_len);
-            glGetProgramInfoLog(program, info_len, NULL, info_log);
+            glGetProgramInfoLog(shader->program, info_len, NULL, info_log);
 
             GST_ERROR_OBJECT(sink, "Failed to link GL program: %s", info_log);
             free(info_log);
         }
 
-        glDeleteProgram(program);
+        glDeleteProgram(shader->program);
         return -EINVAL;
     }
 
-    sink->program = program;
-    glUseProgram(sink->program);
+    glUseProgram(shader->program);
 
-    sink->position_loc = glGetAttribLocation(sink->program, "vPosition");
-    sink->texcoord_loc = glGetAttribLocation(sink->program, "aTexcoord");
-
-    sink->y_loc = glGetUniformLocation(sink->program, "s_ytex");
-    sink->u_loc = glGetUniformLocation(sink->program, "s_utex");
-    sink->v_loc = glGetUniformLocation(sink->program, "s_vtex");
+    shader->position_loc = glGetAttribLocation(shader->program,
+                                                  "vPosition");
+    shader->texcoord_loc = glGetAttribLocation(shader->program,
+                                                  "aTexcoord");
 
     glClearColor(0.0, 0.0, 0.0, 1.0);
 
     GST_DEBUG_OBJECT(sink, "GLES init done");
+
     return 0;
+}
+
+void
+gl_delete_shader(GstGLESShader *shader)
+{
+    glDeleteShader (shader->vertex_shader);
+    shader->vertex_shader = 0;
+
+    glDeleteShader (shader->fragment_shader);
+    shader->fragment_shader = 0;
+
+    glDeleteProgram (shader->program);
+    shader->program = 0;
 }

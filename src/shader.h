@@ -21,20 +21,39 @@
 #ifndef _SHADER_H__
 #define _SHADER_H__
 
-#include "gstglesplugin.h"
+typedef enum _Shaders               Shaders;
 
 enum _Shaders {
     SHADER_DEINT_LINEAR = 0,
     SHADER_COPY
 };
-typedef enum _Shaders Shaders;
+
+typedef struct _GstGLESShader      GstGLESShader;
+typedef struct _GstGLESTexture     GstGLESTexture;
+
+struct _GstGLESShader
+{
+    gint program;
+    GLuint vertex_shader;
+    GLuint fragment_shader;
+
+    /* standard locations, used in most shaders */
+    GLint position_loc;
+    GLint texcoord_loc;
+};
+
+struct _GstGLESTexture
+{
+    GLuint id;
+    GLint loc;
+};
 
 /* initialises the GL program with its shaders
  * and sets the program handle
  * returns 0 on succes, -1 on failure*/
 gint
-gl_init_shader (GstGLESPlugin *sink);
-
-gint
-gl_init_copy_shader (GstGLESPlugin *sink);
+gl_init_shader (GstElement *sink, GstGLESShader *shader,
+                Shaders process_type);
+void
+gl_delete_shader (GstGLESShader *shader);
 #endif

@@ -31,6 +31,8 @@
 #include <gst/gst.h>
 #include <gst/video/gstvideosink.h>
 
+#include "shader.h"
+
 GST_DEBUG_CATEGORY_EXTERN (gst_gles_plugin_debug);
 #define GST_CAT_DEFAULT gst_gles_plugin_debug
 
@@ -51,60 +53,55 @@ G_BEGIN_DECLS
 typedef struct _GstGLESPlugin      GstGLESPlugin;
 typedef struct _GstGLESPluginClass GstGLESPluginClass;
 
+typedef struct _GstGLESWindow      GstGLESWindow;
+typedef struct _GstGLESContext     GstGLESContext;
+
+struct _GstGLESWindow
+{
+    gint width;
+    gint height;
+
+    /* x11 context */
+    Display *display;
+    Window window;
+};
+
+struct _GstGLESContext
+{
+    gboolean initialized;
+
+    /* egl context */
+    EGLDisplay display;
+    EGLSurface surface;
+    EGLContext context;
+
+    /* shader programs */
+    GstGLESShader deinterlace;
+    GstGLESShader scale;
+
+    /* textures for yuv input planes */
+    GstGLESTexture y_tex;
+    GstGLESTexture u_tex;
+    GstGLESTexture v_tex;
+
+    GstGLESTexture rgb_tex;
+
+    /* framebuffer object */
+    GLuint framebuffer;
+};
+
 struct _GstGLESPlugin
 {
   GstVideoSink basesink;
+
+  GstGLESWindow x11;
+  GstGLESContext gles;
 
   gint par_n;
   gint par_d;
 
   gint video_width;
   gint video_height;
-
-  gint window_width;
-  gint window_height;
-
-  /* x11 context */
-  Display *x_display;
-  Window x_window;
-
-  /* gl context */
-  gint program;
-  GLuint vertex_shader;
-  GLuint fragment_shader;
-
-  gint copy_program;
-  GLuint copy_vertex_shader;
-  GLuint copy_fragment_shader;
-
-  /* egl context */
-  EGLDisplay display;
-  EGLSurface surface;
-  EGLContext context;
-
-  /* textures for yuv input planes */
-  GLuint y_texture;
-  GLuint u_texture;
-  GLuint v_texture;
-
-  /* texture for the processed and converted image */
-  GLuint copy_rgb_texture;
-
-  /* framebuffer object */
-  GLuint framebuffer;
-
-  gboolean initialized;
-
-  GLint position_loc;
-  GLint texcoord_loc;
-
-  GLint y_loc;
-  GLint u_loc;
-  GLint v_loc;
-
-  GLint copy_position_loc;
-  GLint copy_texcoord_loc;
-  GLint copy_rgb_loc;
 
   /* properties */
   gboolean silent;
