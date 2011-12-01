@@ -95,15 +95,15 @@ static GstStaticPadTemplate gles_sink_factory =
 
 /* OpenGL ES 2.0 implementation */
 static GLuint
-gl_create_texture()
+gl_create_texture(GLuint tex_filter)
 {
     GLuint tex_id;
 
     glGenTextures (1, &tex_id);
     glBindTexture (GL_TEXTURE_2D, tex_id);
 
-    glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, tex_filter);
+    glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, tex_filter);
 
     return tex_id;
 }
@@ -114,7 +114,7 @@ gl_gen_framebuffer(GstGLESPlugin *sink)
     GstGLESContext *gles = &sink->gl_thread.gles;
     glGenFramebuffers (1, &gles->framebuffer);
 
-    gles->rgb_tex.id = gl_create_texture();
+    gles->rgb_tex.id = gl_create_texture(GL_LINEAR);
     if (!gles->rgb_tex.id)
         GST_ERROR_OBJECT (sink, "Could not create RGB texture");
 
@@ -133,9 +133,9 @@ gl_init_textures (GstGLESPlugin *sink)
 {
     //glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-    sink->gl_thread.gles.y_tex.id = gl_create_texture();
-    sink->gl_thread.gles.u_tex.id = gl_create_texture();
-    sink->gl_thread.gles.v_tex.id = gl_create_texture();
+    sink->gl_thread.gles.y_tex.id = gl_create_texture(GL_NEAREST);
+    sink->gl_thread.gles.u_tex.id = gl_create_texture(GL_NEAREST);
+    sink->gl_thread.gles.v_tex.id = gl_create_texture(GL_NEAREST);
 }
 
 static void
