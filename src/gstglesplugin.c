@@ -449,9 +449,6 @@ x11_init (GstGLESPlugin *sink, gint width, gint height)
     XMapWindow (sink->x11.display, sink->x11.window);
     XStoreName (sink->x11.display, sink->x11.window, "GLESSink");
 
-    gst_x_overlay_got_window_handle (GST_X_OVERLAY (sink),
-                                     sink->x11.window);
-
     return 0;
 }
 
@@ -573,6 +570,8 @@ setup_gl_context (GstGLESPlugin *sink)
 
     GST_DEBUG_OBJECT (sink, "Init done");
 
+    gst_x_overlay_got_window_handle (GST_X_OVERLAY (sink),
+                                     sink->x11.window);
     return 0;
 }
 
