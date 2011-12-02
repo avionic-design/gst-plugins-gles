@@ -23,14 +23,13 @@
 #define _SHADER_H__
 
 typedef enum _GstGLESShaderTypes   GstGLESShaderTypes;
+typedef struct _GstGLESTexture     GstGLESTexture;
+typedef struct _GstGLESShader      GstGLESShader;
 
 enum _GstGLESShaderTypes {
     SHADER_DEINT_LINEAR = 0,
     SHADER_COPY
 };
-
-typedef struct _GstGLESShader      GstGLESShader;
-typedef struct _GstGLESTexture     GstGLESTexture;
 
 struct _GstGLESShader
 {
@@ -49,8 +48,7 @@ struct _GstGLESTexture
     GLint loc;
 };
 
-/* initialises the GL program with its shaders
- * and sets the program handle
+/* initialises the GL program with its shaders and sets the program handle
  * returns 0 on succes, -1 on failure*/
 gint
 gl_init_shader (GstElement *sink, GstGLESShader *shader,
