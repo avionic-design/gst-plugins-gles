@@ -1,6 +1,7 @@
 /*
  * GStreamer
  * Copyright (C) 2011 Julian Scheel <julian@jusst.de>
+ * Copyright (C) 2011 Soeren Grunewald <soeren.grunewald@avionic-design.de>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
