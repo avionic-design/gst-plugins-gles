@@ -374,10 +374,15 @@ egl_init (GstGLESPlugin *sink)
 static void
 egl_close(GstGLESContext *context)
 {
-    GLuint textures[] = { 0, 1, 2, 3 };
+    const GLuint textures[] = {
+        context->y_tex.id,
+        context->u_tex.id,
+        context->v_tex.id,
+        context->rgb_tex.id
+    };
 
     if (context->initialized) {
-        glDeleteTextures (4, textures);
+        glDeleteTextures (G_N_ELEMENTS(textures), textures);
         gl_delete_shader (&context->scale);
         gl_delete_shader (&context->deinterlace);
     }
