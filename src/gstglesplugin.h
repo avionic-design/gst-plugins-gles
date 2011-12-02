@@ -60,6 +60,10 @@ typedef struct _GstGLESThread      GstGLESThread;
 
 struct _GstGLESWindow
 {
+    /* thread context */
+    GThread *thread;
+    gboolean running;
+
     gint width;
     gint height;
 

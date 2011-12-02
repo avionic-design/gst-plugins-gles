@@ -49,6 +49,8 @@
 
 #include <X11/Xatom.h>
 
+#include <unistd.h>
+
 #include "gstglesplugin.h"
 #include "shader.h"
 
@@ -84,6 +86,8 @@ static GstStateChangeReturn gst_gles_plugin_change_state (GstElement *element,
                                                           GstStateChange transition);
 static gint setup_gl_context (GstGLESPlugin *sink);
 static gpointer gl_thread_proc (gpointer data);
+static gpointer x11_thread_proc (gpointer data);
+static void stop_x11_thread (GstGLESPlugin *sink);
 
 #define WxH ", width = (int) [ 16, 4096 ], height = (int) [ 16, 4096 ]"
 
@@ -298,6 +302,21 @@ init_gl_thread (GstGLESPlugin *sink)
     }
 }
 
+static void
+init_x11_thread (GstGLESPlugin *sink)
+{
+    GError *err = NULL;
+
+    if (!g_thread_get_initialized())
+        g_thread_init (NULL);
+
+    sink->x11.thread = g_thread_create(x11_thread_proc,
+                                       sink, TRUE, &err);
+    if (err || !sink->x11.thread) {
+        GST_ERROR_OBJECT(sink, "Could not create x11 thread");
+    }
+}
+
 static gint
 egl_init (GstGLESPlugin *sink)
 {
@@ -322,6 +341,7 @@ egl_init (GstGLESPlugin *sink)
 
     GstGLESContext *gles = &sink->gl_thread.gles;
 
+    GST_DEBUG_OBJECT (sink, "egl get display");
     gles->display = eglGetDisplay((EGLNativeDisplayType)
                                           sink->x11.display);
     if (gles->display == EGL_NO_DISPLAY) {
@@ -329,12 +349,14 @@ egl_init (GstGLESPlugin *sink)
         return -1;
     }
 
+    GST_DEBUG_OBJECT (sink, "egl initialize");
     if (!eglInitialize(gles->display, &major, &minor)) {
         GST_ERROR_OBJECT(sink, "Could not initialize EGL context");
         return -1;
     }
     GST_DEBUG_OBJECT (sink, "Have EGL version: %d.%d", major, minor);
 
+    GST_DEBUG_OBJECT (sink, "choose config");
     if (!eglChooseConfig(gles->display, configAttribs, &config, 1,
                         &num_configs)) {
         GST_ERROR_OBJECT(sink, "Could not choose EGL config");
@@ -346,6 +368,7 @@ egl_init (GstGLESPlugin *sink)
                            num_configs);
     }
 
+    GST_DEBUG_OBJECT (sink, "create window surface");
     gles->surface = eglCreateWindowSurface(gles->display, config,
                                      sink->x11.window, NULL);
     if (gles->surface == EGL_NO_SURFACE) {
@@ -353,6 +376,7 @@ egl_init (GstGLESPlugin *sink)
         return -1;
     }
 
+    GST_DEBUG_OBJECT (sink, "egl create context");
     gles->context = eglCreateContext(gles->display, config,
                                      EGL_NO_CONTEXT, contextAttribs);
     if (gles->context == EGL_NO_CONTEXT) {
@@ -360,12 +384,14 @@ egl_init (GstGLESPlugin *sink)
         return -1;
     }
 
+    GST_DEBUG_OBJECT (sink, "egl make context current");
     if (!eglMakeCurrent(gles->display, gles->surface,
                         gles->surface, gles->context)) {
         GST_ERROR_OBJECT(sink, "Could not set EGL context to current");
         return -1;
     }
 
+    GST_DEBUG_OBJECT (sink, "egl init done");
     gles->initialized = TRUE;
 
     return 0;
@@ -418,6 +444,7 @@ x11_init (GstGLESPlugin *sink, gint width, gint height)
         return -1;
     }
 
+    XLockDisplay (sink->x11.display);
     root = DefaultRootWindow (sink->x11.display);
     swa.event_mask =
             StructureNotifyMask | ExposureMask | VisibilityChangeMask;
@@ -438,6 +465,7 @@ x11_init (GstGLESPlugin *sink, gint width, gint height)
 
     XMapWindow (sink->x11.display, sink->x11.window);
     XStoreName (sink->x11.display, sink->x11.window, "GLESSink");
+    XUnlockDisplay (sink->x11.display);
 
     return 0;
 }
@@ -446,37 +474,25 @@ static void
 x11_close (GstGLESPlugin *sink)
 {
     if (sink->x11.display) {
+        XLockDisplay (sink->x11.display);
         XDestroyWindow(sink->x11.display, sink->x11.window);
+        XUnlockDisplay (sink->x11.display);
         XCloseDisplay(sink->x11.display);
         sink->x11.display = NULL;
     }
 }
 
-/* gl thread main function */
+/* x11 thread mian function */
 static gpointer
-gl_thread_proc (gpointer data)
+x11_thread_proc (gpointer data)
 {
     GstGLESPlugin *sink = GST_GLES_PLUGIN (data);
-    GstGLESThread *thread = &sink->gl_thread;
-    GstGLESContext *gles = &thread->gles;
+    GstGLESWindow *x11 = &sink->x11;
 
-    thread->running = setup_gl_context (sink) == 0;
-
-    g_mutex_lock (thread->data_lock);
-    while (thread->running) {
-        /* wait till gst_gles_plugin_render has some data for us */
-        g_cond_wait (thread->data_signal, thread->data_lock);
-        if (thread->buf) {
-            gl_draw_fbo (sink, thread->buf);
-            gl_draw_onscreen (sink);
-        }
-
-        /* signal gst_gles_plugin_render that we are done */
-        g_mutex_lock (thread->render_lock);
-        g_cond_signal (thread->render_signal);
-        g_mutex_unlock (thread->render_lock);
-
+    x11->running = TRUE;
+    while (x11->running && sink->x11.display) {
         /* check for events from the x-server */
+        XLockDisplay (sink->x11.display);
         while (XPending (sink->x11.display)) {
             XEvent  xev;
             XNextEvent(sink->x11.display, &xev);
@@ -494,9 +510,43 @@ gl_thread_proc (gpointer data)
                 break;
             }
         }
+        XUnlockDisplay (sink->x11.display);
+        usleep (100000);
+    }
+
+    return 0;
+}
+
+/* gl thread main function */
+static gpointer
+gl_thread_proc (gpointer data)
+{
+    GstGLESPlugin *sink = GST_GLES_PLUGIN (data);
+    GstGLESThread *thread = &sink->gl_thread;
+    GstGLESContext *gles = &thread->gles;
+
+    thread->running = setup_gl_context (sink) == 0;
+    init_x11_thread (sink);
+
+    g_mutex_lock (thread->data_lock);
+    while (thread->running) {
+        /* wait till gst_gles_plugin_render has some data for us */
+        g_cond_wait (thread->data_signal, thread->data_lock);
+        if (thread->buf) {
+            XLockDisplay (sink->x11.display);
+            gl_draw_fbo (sink, thread->buf);
+            gl_draw_onscreen (sink);
+            XUnlockDisplay (sink->x11.display);
+        }
+
+        /* signal gst_gles_plugin_render that we are done */
+        g_mutex_lock (thread->render_lock);
+        g_cond_signal (thread->render_signal);
+        g_mutex_unlock (thread->render_lock);
     }
     g_mutex_unlock (thread->data_lock);
 
+    stop_x11_thread (sink);
     egl_close(gles);
     x11_close(sink);
     return 0;
@@ -567,6 +617,15 @@ stop_gl_thread (GstGLESPlugin *sink)
         g_mutex_unlock (sink->gl_thread.data_lock);
 
         g_thread_join(sink->gl_thread.handle);
+    }
+}
+
+static void
+stop_x11_thread (GstGLESPlugin *sink)
+{
+    if (sink->x11.running) {
+        sink->x11.running = FALSE;
+        g_thread_join(sink->x11.thread);
     }
 }
 
