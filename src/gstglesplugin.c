@@ -98,7 +98,7 @@ static GstStaticPadTemplate gles_sink_factory =
 static GLuint
 gl_create_texture(GLuint tex_filter)
 {
-    GLuint tex_id;
+    GLuint tex_id = 0;
 
     glGenTextures (1, &tex_id);
     glBindTexture (GL_TEXTURE_2D, tex_id);
