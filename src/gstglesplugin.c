@@ -400,6 +400,10 @@ egl_init (GstGLESPlugin *sink)
 static void
 egl_close(GstGLESContext *context)
 {
+    const GLuint framebuffers[] = {
+        context->framebuffer
+    };
+
     const GLuint textures[] = {
         context->y_tex.id,
         context->u_tex.id,
@@ -408,6 +412,7 @@ egl_close(GstGLESContext *context)
     };
 
     if (context->initialized) {
+        glDeleteFramebuffers (G_N_ELEMENTS(framebuffers), framebuffers);
         glDeleteTextures (G_N_ELEMENTS(textures), textures);
         gl_delete_shader (&context->scale);
         gl_delete_shader (&context->deinterlace);
