@@ -54,7 +54,10 @@
 
 GST_DEBUG_CATEGORY (gst_gles_plugin_debug);
 
-enum
+
+typedef enum _GstGLESPluginProperties  GstGLESPluginProperties;
+
+enum _GstGLESPluginProperties
 {
   PROP_0,
   PROP_SILENT
