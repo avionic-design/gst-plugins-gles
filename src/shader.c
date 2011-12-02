@@ -167,7 +167,7 @@ gl_load_shader (GstElement *sink, const gchar *basename, const GLenum type)
  * through process_type */
 static gint
 gl_load_shaders (GstElement *sink, GstGLESShader *shader,
-                 Shaders process_type)
+                 GstGLESShaderTypes process_type)
 {
     shader->vertex_shader = gl_load_shader (sink, VERTEX_SHADER_BASENAME,
                                           GL_VERTEX_SHADER);
@@ -185,7 +185,7 @@ gl_load_shaders (GstElement *sink, GstGLESShader *shader,
 
 gint
 gl_init_shader (GstElement *sink, GstGLESShader *shader,
-                Shaders process_type)
+                GstGLESShaderTypes process_type)
 {
     gint ret;
     gint linked;

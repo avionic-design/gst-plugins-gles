@@ -22,9 +22,9 @@
 #ifndef _SHADER_H__
 #define _SHADER_H__
 
-typedef enum _Shaders               Shaders;
+typedef enum _GstGLESShaderTypes   GstGLESShaderTypes;
 
-enum _Shaders {
+enum _GstGLESShaderTypes {
     SHADER_DEINT_LINEAR = 0,
     SHADER_COPY
 };
@@ -54,7 +54,7 @@ struct _GstGLESTexture
  * returns 0 on succes, -1 on failure*/
 gint
 gl_init_shader (GstElement *sink, GstGLESShader *shader,
-                Shaders process_type);
+                GstGLESShaderTypes process_type);
 void
 gl_delete_shader (GstGLESShader *shader);
 #endif
