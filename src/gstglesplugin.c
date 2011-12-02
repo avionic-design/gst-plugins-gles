@@ -90,9 +90,6 @@ static GstStaticPadTemplate gles_sink_factory =
                                  GST_STATIC_CAPS ( GST_VIDEO_CAPS_YUV("I420")
                                                    WxH) );
 
-
-
-
 /* OpenGL ES 2.0 implementation */
 static GLuint
 gl_create_texture(GLuint tex_filter)
@@ -124,15 +121,12 @@ gl_gen_framebuffer(GstGLESPlugin *sink)
 
     glBindFramebuffer (GL_FRAMEBUFFER, gles->framebuffer);
     glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                            GL_TEXTURE_2D, gles->rgb_tex.id,
-                            0);
+                            GL_TEXTURE_2D, gles->rgb_tex.id, 0);
 }
 
 static void
 gl_init_textures (GstGLESPlugin *sink)
 {
-    //glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
     sink->gl_thread.gles.y_tex.id = gl_create_texture(GL_NEAREST);
     sink->gl_thread.gles.u_tex.id = gl_create_texture(GL_NEAREST);
     sink->gl_thread.gles.v_tex.id = gl_create_texture(GL_NEAREST);
@@ -274,7 +268,6 @@ gl_draw_onscreen (GstGLESPlugin *sink)
     glEnableVertexAttribArray (gles->scale.position_loc);
     glEnableVertexAttribArray (gles->scale.texcoord_loc);
 
-
     glActiveTexture(GL_TEXTURE3);
     glBindTexture (GL_TEXTURE_2D, gles->rgb_tex.id);
     glUniform1i (gles->rgb_tex.loc, 3);
@@ -291,15 +284,11 @@ init_gl_thread (GstGLESPlugin *sink)
     GstGLESThread *thread = &sink->gl_thread;
     GError *err = NULL;
 
-    GST_DEBUG_OBJECT(sink, "Setup thread for gl processing");
-
     if (!g_thread_get_initialized())
         g_thread_init (NULL);
 
     thread->handle = g_thread_create(gl_thread_proc,
                                      sink, TRUE, &err);
-
-
     if (err || !sink->gl_thread.handle) {
         GST_ERROR_OBJECT(sink, "Could not create gl thread");
     }
@@ -336,14 +325,12 @@ egl_init (GstGLESPlugin *sink)
         return -1;
     }
 
-    GST_DEBUG_OBJECT (sink, "Initialize EGL");
     if (!eglInitialize(gles->display, &major, &minor)) {
         GST_ERROR_OBJECT(sink, "Could not initialize EGL context");
         return -1;
     }
     GST_DEBUG_OBJECT (sink, "Have EGL version: %d.%d", major, minor);
 
-    GST_DEBUG_OBJECT (sink, "Choose EGL config");
     if (!eglChooseConfig(gles->display, configAttribs, &config, 1,
                         &num_configs)) {
         GST_ERROR_OBJECT(sink, "Could not choose EGL config");
@@ -355,10 +342,6 @@ egl_init (GstGLESPlugin *sink)
                            num_configs);
     }
 
-    GST_DEBUG_OBJECT (sink, "Create EGL window surface, "
-                      "display: %p, x-display: %p, config: %p",
-                      gles->display,
-                      sink->x11.display, config);
     gles->surface = eglCreateWindowSurface(gles->display, config,
                                      sink->x11.window, NULL);
     if (gles->surface == EGL_NO_SURFACE) {
@@ -366,7 +349,6 @@ egl_init (GstGLESPlugin *sink)
         return -1;
     }
 
-    GST_DEBUG_OBJECT (sink, "Create EGL context");
     gles->context = eglCreateContext(gles->display, config,
                                      EGL_NO_CONTEXT, contextAttribs);
     if (gles->context == EGL_NO_CONTEXT) {
@@ -374,7 +356,6 @@ egl_init (GstGLESPlugin *sink)
         return -1;
     }
 
-    GST_DEBUG_OBJECT (sink, "Switch EGL context to current");
     if (!eglMakeCurrent(gles->display, gles->surface,
                         gles->surface, gles->context)) {
         GST_ERROR_OBJECT(sink, "Could not set EGL context to current");
@@ -470,7 +451,6 @@ gl_thread_proc (gpointer data)
     GstGLESThread *thread = &sink->gl_thread;
     GstGLESContext *gles = &thread->gles;
 
-    GST_DEBUG_OBJECT (sink, "setup gl context");
     thread->running = setup_gl_context (sink) == 0;
 
     g_mutex_lock (thread->data_lock);
@@ -519,7 +499,6 @@ setup_gl_context (GstGLESPlugin *sink)
     GstGLESContext *gles = &sink->gl_thread.gles;
     gint ret;
 
-    GST_DEBUG_OBJECT(sink, "Initialize X11");
     sink->x11.width = 720;
     sink->x11.height = 576;
     if (x11_init (sink, sink->x11.width, sink->x11.height) < 0) {
@@ -527,14 +506,12 @@ setup_gl_context (GstGLESPlugin *sink)
         return -ENOMEM;
     }
 
-    GST_DEBUG_OBJECT (sink, "Initialize EGL");
     if (egl_init (sink) < 0) {
         GST_ERROR_OBJECT (sink, "EGL init failed, abort");
         x11_close (sink);
         return -ENOMEM;
     }
 
-    GST_DEBUG_OBJECT (sink, "Initialize GLES Shaders");
     ret = gl_init_shader (GST_ELEMENT (sink), &gles->deinterlace,
                           SHADER_DEINT_LINEAR);
     if (ret < 0) {
@@ -558,27 +535,20 @@ setup_gl_context (GstGLESPlugin *sink)
         return -ENOMEM;
     }
     gles->rgb_tex.loc = glGetUniformLocation(gles->scale.program, "s_tex");
-
-    GST_DEBUG_OBJECT (sink, "Initialize GLES Textures");
     gl_init_textures (sink);
 
     /* generate the framebuffer object */
-    GST_DEBUG_OBJECT (sink, "Initialize FBO");
     gl_gen_framebuffer (sink);
-
     gles->initialized = TRUE;
 
-    GST_DEBUG_OBJECT (sink, "Init done");
-
-    gst_x_overlay_got_window_handle (GST_X_OVERLAY (sink),
-                                     sink->x11.window);
+    /* finally announce the window handle to controling app */
+    gst_x_overlay_got_window_handle (GST_X_OVERLAY (sink), sink->x11.window);
     return 0;
 }
 
 static void
 stop_gl_thread (GstGLESPlugin *sink)
 {
-    GST_DEBUG_OBJECT (sink, "stopping gl thread");
     if (sink->gl_thread.running) {
         sink->gl_thread.running = FALSE;
         sink->gl_thread.buf = NULL;
@@ -701,10 +671,6 @@ static gboolean
 gst_gles_plugin_start (GstBaseSink *basesink)
 {
     GstGLESPlugin *sink = GST_GLES_PLUGIN (basesink);
-
-    GST_LOG_OBJECT (basesink, "start in thread %p", g_thread_self());
-    GST_DEBUG_OBJECT (sink, "Initialized");
-
     return TRUE;
 }
 
@@ -718,8 +684,6 @@ gst_gles_plugin_stop (GstBaseSink *basesink)
 
     GST_VIDEO_SINK_WIDTH (sink) = 0;
     GST_VIDEO_SINK_HEIGHT (sink)  = 0;
-
-    GST_LOG_OBJECT (sink, "stopped");
 
     return TRUE;
 }
@@ -736,8 +700,6 @@ gst_gles_plugin_set_caps (GstBaseSink *basesink, GstCaps *caps)
   gint par_d;
   gint w;
   gint h;
-
-  GST_LOG_OBJECT (sink, "caps: %" GST_PTR_FORMAT, caps);
 
   if (!gst_video_format_parse_caps (caps, &fmt, &w, &h)) {
       GST_WARNING_OBJECT (sink, "pase_caps failed");
@@ -771,12 +733,6 @@ gst_gles_plugin_set_caps (GstBaseSink *basesink, GstCaps *caps)
 
   sink->video_width = sink->video_width * par_n / par_d;
 
-  GST_INFO_OBJECT (sink, "format                : %d", fmt);
-  GST_INFO_OBJECT (sink, "encoded width x height: %d x %d", w, h);
-  GST_INFO_OBJECT (sink, "display width x height: %d x %d", sink->video_width,
-                   sink->video_height);
-  GST_INFO_OBJECT (sink, "pixel-aspect-ratio    : %d/%d", par_d, par_n);
-
   return TRUE;
 }
 
@@ -792,7 +748,6 @@ static GstFlowReturn
 gst_gles_plugin_preroll (GstBaseSink * basesink, GstBuffer * buf)
 {
     GstGLESPlugin *sink = GST_GLES_PLUGIN (basesink);
-    GST_LOG_OBJECT (sink, "preroll");
     if (!sink->gl_thread.running) {
         init_gl_thread(sink);
     }
@@ -822,10 +777,9 @@ gst_gles_plugin_render (GstBaseSink *basesink, GstBuffer *buf)
     /* FIXME: timed_wait always fails. */
     ret = g_cond_timed_wait (thread->render_signal, thread->render_lock,
                              &timeout);
+    GST_DEBUG_OBJECT (basesink, "Render %s", ret ? "done" : "with timeout");
 #endif
     g_mutex_unlock (thread->render_lock);
-
-    GST_DEBUG_OBJECT (basesink, "Render %s", ret ? "done" : "with timeout");
 
     return ret ? GST_FLOW_OK : GST_FLOW_ERROR;
 }
@@ -869,7 +823,6 @@ gst_gles_xoverlay_set_window_handle (GstXOverlay *overlay, guintptr handle)
 static void
 gst_gles_xoverlay_interface_init (GstXOverlayClass *overlay_klass)
 {
-    GST_DEBUG_OBJECT(overlay_klass, "Init overlay");
     overlay_klass->set_window_handle = gst_gles_xoverlay_set_window_handle;
 }
 

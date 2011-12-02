@@ -59,7 +59,6 @@ gl_load_binary_shader(GstElement *sink,
     file = g_file_new_for_path(filename);
 
     /* create a shader object */
-    GST_DEBUG_OBJECT(sink, "Create shader");
     shader = glCreateShader (type);
     if (shader == 0) {
         GST_ERROR_OBJECT(sink, "Could not create shader object");
@@ -73,7 +72,6 @@ gl_load_binary_shader(GstElement *sink,
         goto cleanup;
     }
 
-    GST_DEBUG_OBJECT(sink, "Load shader with %d bytes binary code", length);
     glShaderBinary(1, &shader, GL_NVIDIA_PLATFORM_BINARY_NV,
                    binary, length);
 
@@ -101,7 +99,6 @@ gl_load_source_shader (GstElement *sink,
     GLint src_len;
 
     /* create a shader object */
-    GST_DEBUG_OBJECT(sink, "Create shader");
     shader = glCreateShader (type);
     if (shader == 0) {
         GST_ERROR_OBJECT(sink, "Could not create shader object");
@@ -110,24 +107,17 @@ gl_load_source_shader (GstElement *sink,
 
     /* load source into shader object */
     src_len = (GLint) strlen(shader_src);
-    GST_DEBUG_OBJECT(sink, "Load shader source on shader %d."
-                     "Source length is %d. Source is:\n%s",
-                     shader, src_len, shader_src);
     glShaderSource (shader, 1, &shader_src, &src_len);
 
     /* compile the shader */
-    GST_DEBUG_OBJECT(sink, "Compile shader");
     glCompileShader (shader);
 
     /* check compiler status */
-    GST_DEBUG_OBJECT(sink, "Check compiler state");
     glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
     if (!compiled) {
-        GST_DEBUG_OBJECT(sink, "Compilation failure");
         GLint info_len = 0;
 
         glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_len);
-
         if(info_len > 1) {
             char *info_log = malloc(sizeof(char) * info_len);
             glGetShaderInfoLog(shader, info_len, NULL, info_log);
@@ -199,7 +189,6 @@ gl_init_shader (GstElement *sink, GstGLESShader *shader,
     gint ret;
     gint linked;
 
-    GST_DEBUG_OBJECT(sink, "Create shader Program");
     shader->program = glCreateProgram();
     if(!shader->program) {
         GST_ERROR_OBJECT(sink, "Could not create GL program");
@@ -207,32 +196,24 @@ gl_init_shader (GstElement *sink, GstGLESShader *shader,
     }
 
     /* load the shaders */
-    GST_DEBUG_OBJECT(sink, "Load vertex and fragment shader");
     ret = gl_load_shaders(sink, shader, process_type);
     if(ret < 0) {
         GST_ERROR_OBJECT(sink, "Could not create GL shaders: %d", ret);
         return ret;
     }
 
-    GST_DEBUG_OBJECT(sink, "Attach vertex shader to copy program");
     glAttachShader(shader->program, shader->vertex_shader);
-    GST_DEBUG_OBJECT(sink, "Attach copy shader to copy program");
     glAttachShader(shader->program, shader->fragment_shader);
-    GST_DEBUG_OBJECT(sink, "Bind vPosition to copy program");
     glBindAttribLocation(shader->program, 0, "vPosition");
-
-    GST_DEBUG_OBJECT(sink, "Link Copy Program");
     glLinkProgram(shader->program);
 
     /* check linker status */
-    GST_DEBUG_OBJECT(sink, "Get Linker Result");
     glGetProgramiv(shader->program, GL_LINK_STATUS, &linked);
     if(!linked) {
         GST_ERROR_OBJECT(sink, "Linker failure");
         GLint info_len = 0;
 
         glGetProgramiv(shader->program, GL_INFO_LOG_LENGTH, &info_len);
-
         if(info_len > 1) {
             char *info_log = malloc(sizeof(char) * info_len);
             glGetProgramInfoLog(shader->program, info_len, NULL, info_log);
@@ -247,14 +228,10 @@ gl_init_shader (GstElement *sink, GstGLESShader *shader,
 
     glUseProgram(shader->program);
 
-    shader->position_loc = glGetAttribLocation(shader->program,
-                                                  "vPosition");
-    shader->texcoord_loc = glGetAttribLocation(shader->program,
-                                                  "aTexcoord");
+    shader->position_loc = glGetAttribLocation(shader->program, "vPosition");
+    shader->texcoord_loc = glGetAttribLocation(shader->program, "aTexcoord");
 
     glClearColor(0.0, 0.0, 0.0, 1.0);
-
-    GST_DEBUG_OBJECT(sink, "GLES init done");
 
     return 0;
 }
