@@ -91,7 +91,7 @@ static GstStateChangeReturn gst_gles_plugin_change_state (GstElement *element,
 static gint setup_gl_context (GstGLESPlugin *sink);
 static gpointer gl_thread_proc (gpointer data);
 static gpointer x11_thread_proc (gpointer data);
-static void stop_x11_thread (GstGLESPlugin *sink);
+static void x11_thread_stop (GstGLESPlugin *sink);
 
 #define WxH ", width = (int) [ 16, 4096 ], height = (int) [ 16, 4096 ]"
 
@@ -575,6 +575,15 @@ x11_thread_init (GstGLESPlugin *sink)
     }
 }
 
+static void
+x11_thread_stop (GstGLESPlugin *sink)
+{
+    if (sink->x11.running) {
+        sink->x11.running = FALSE;
+        g_thread_join(sink->x11.thread);
+    }
+}
+
 /* x11 thread mian function */
 static gpointer
 x11_thread_proc (gpointer data)
@@ -676,7 +685,7 @@ gl_thread_proc (gpointer data)
     g_cond_signal (thread->render_signal);
     g_mutex_unlock (thread->render_lock);
 
-    stop_x11_thread (sink);
+    x11_thread_stop (sink);
     egl_close(sink);
     x11_close(sink);
     return 0;
@@ -735,14 +744,6 @@ setup_gl_context (GstGLESPlugin *sink)
     return 0;
 }
 
-static void
-stop_x11_thread (GstGLESPlugin *sink)
-{
-    if (sink->x11.running) {
-        sink->x11.running = FALSE;
-        g_thread_join(sink->x11.thread);
-    }
-}
 
 /* GObject vmethod implementations */
 
