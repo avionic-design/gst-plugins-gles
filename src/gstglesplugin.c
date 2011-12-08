@@ -37,6 +37,10 @@
 #  include <config.h>
 #endif
 
+#include <glib.h>
+#include <glib/gstdio.h>
+#include <gio/gio.h>
+
 #include <string.h>
 
 #include <gst/gst.h>
@@ -397,6 +401,101 @@ egl_init (GstGLESPlugin *sink)
     return 0;
 }
 
+/*
+ * ugly quirk, to workaround nvidia bugs
+ * closes left open file handles
+ */
+
+static void
+egl_close_file (GstGLESPlugin *sink, const gchar *filename)
+{
+    const gchar *target_file;
+    GError *err = NULL;
+    GFileInfo *info;
+    GFile *file;
+
+    GST_DEBUG_OBJECT (sink, "Check file handle: %s", filename);
+
+    file = g_file_new_for_path (filename);
+    info = g_file_query_info (file, "*",
+                              G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,
+                              NULL, &err);
+    if (!info || err) {
+        GST_ERROR_OBJECT (sink, "Could get file info: %s",
+                         err->message);
+        g_object_unref (err);
+        goto cleanup;
+    }
+
+    GST_DEBUG_OBJECT (sink, "File type is: %d",
+                     g_file_info_get_file_type(info));
+
+    if (!g_file_info_get_is_symlink (info)) {
+        GST_DEBUG_OBJECT (sink, "File is no symlink");
+        goto cleanup;
+    }
+
+    target_file = g_file_info_get_symlink_target (info);
+    GST_DEBUG_OBJECT (sink, "Check file resolves to: '%s'",
+                      target_file);
+
+    if (g_str_equal (target_file, "/dev/tegra_sema") ||
+        g_str_equal (target_file, "/dev/nvhost-gr2d") ||
+        g_str_equal (target_file, "/dev/nvhost-gr3d"))
+    {
+        gchar *basename = g_file_get_basename (file);
+        gint64 fid = g_ascii_strtoll (basename, NULL, 10);
+
+        if (fid > 0) {
+            GST_DEBUG_OBJECT (sink, "Close file handle %"
+                              G_GINT64_FORMAT, fid);
+            if (close (fid) < 0) {
+                GST_ERROR_OBJECT (sink,
+                                  "Could not close file handle: %d",
+                                  errno);
+            }
+        }
+
+        g_free (basename);
+    }
+
+cleanup:
+    g_object_unref (info);
+    g_object_unref (file);
+}
+
+static void
+egl_close_handles (GstGLESPlugin *sink)
+{
+    GError *err = NULL;
+    GDir *directory;
+    const gchar *file;
+    gchar *path;
+
+
+    path = g_strdup_printf ("/proc/%u/fd", getpid());
+    GST_DEBUG_OBJECT (sink, "Check for dead file handles in %s", path);
+
+    directory = g_dir_open (path, 0, &err);
+    if (!directory || err) {
+        GST_ERROR_OBJECT(sink, "Could not list files: %s",
+                         err->message);
+        g_object_unref (err);
+        goto cleanup;
+    }
+
+    while ((file = g_dir_read_name(directory))) {
+        gchar *filename = g_strconcat(path, "/", file, NULL);
+        egl_close_file (sink, filename);
+        g_free (filename);
+    }
+
+cleanup:
+    g_free (path);
+    g_dir_close (directory);
+}
+
+
 static void
 egl_close(GstGLESPlugin *sink)
 {
@@ -434,6 +533,8 @@ egl_close(GstGLESPlugin *sink)
         eglTerminate (context->display);
         context->display = NULL;
     }
+
+    egl_close_handles (sink);
 
     context->initialized = FALSE;
 }
