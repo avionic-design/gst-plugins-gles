@@ -420,14 +420,14 @@ egl_close(GstGLESPlugin *sink)
         gl_delete_shader (&context->deinterlace);
     }
 
-    if (context->surface) {
-        eglDestroySurface (context->display, context->surface) ;
-        context->surface = NULL;
-    }
-
     if (context->context) {
         eglDestroyContext (context->display, context->context);
         context->context = NULL;
+    }
+
+    if (context->surface) {
+        eglDestroySurface (context->display, context->surface) ;
+        context->surface = NULL;
     }
 
     if (context->display) {
