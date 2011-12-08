@@ -625,6 +625,21 @@ gl_thread_init (GstGLESPlugin *sink)
     }
 }
 
+static void
+gl_thread_stop (GstGLESPlugin *sink)
+{
+    if (sink->gl_thread.running) {
+        sink->gl_thread.running = FALSE;
+        sink->gl_thread.buf = NULL;
+
+        g_mutex_lock (sink->gl_thread.data_lock);
+        g_cond_signal (sink->gl_thread.data_signal);
+        g_mutex_unlock (sink->gl_thread.data_lock);
+
+        g_thread_join(sink->gl_thread.handle);
+    }
+}
+
 /* gl thread main function */
 static gpointer
 gl_thread_proc (gpointer data)
@@ -717,21 +732,6 @@ setup_gl_context (GstGLESPlugin *sink)
     /* finally announce the window handle to controling app */
     gst_x_overlay_got_window_handle (GST_X_OVERLAY (sink), sink->x11.window);
     return 0;
-}
-
-static void
-stop_gl_thread (GstGLESPlugin *sink)
-{
-    if (sink->gl_thread.running) {
-        sink->gl_thread.running = FALSE;
-        sink->gl_thread.buf = NULL;
-
-        g_mutex_lock (sink->gl_thread.data_lock);
-        g_cond_signal (sink->gl_thread.data_signal);
-        g_mutex_unlock (sink->gl_thread.data_lock);
-
-        g_thread_join(sink->gl_thread.handle);
-    }
 }
 
 static void
@@ -861,7 +861,7 @@ gst_gles_plugin_stop (GstBaseSink *basesink)
 {
     GstGLESPlugin *sink = GST_GLES_PLUGIN (basesink);
 
-    stop_gl_thread (sink);
+    gl_thread_stop (sink);
 
     GST_VIDEO_SINK_WIDTH (sink) = 0;
     GST_VIDEO_SINK_HEIGHT (sink)  = 0;
@@ -978,7 +978,7 @@ gst_gles_plugin_finalize (GObject *gobject)
     GstGLESPlugin *plugin = (GstGLESPlugin *)gobject;
     GstGLESThread *thread = &plugin->gl_thread;
 
-    stop_gl_thread (plugin);
+    gl_thread_stop (plugin);
 
     if (thread->data_lock) {
         g_mutex_free(thread->data_lock);
