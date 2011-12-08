@@ -852,7 +852,6 @@ gst_gles_plugin_get_property (GObject * object, guint prop_id,
 static gboolean
 gst_gles_plugin_start (GstBaseSink *basesink)
 {
-    GstGLESPlugin *sink = GST_GLES_PLUGIN (basesink);
     return TRUE;
 }
 
