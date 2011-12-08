@@ -290,20 +290,6 @@ gl_draw_onscreen (GstGLESPlugin *sink)
 
 /* EGL implementation */
 
-static void
-init_x11_thread (GstGLESPlugin *sink)
-{
-    GError *err = NULL;
-
-    if (!g_thread_get_initialized())
-        g_thread_init (NULL);
-
-    sink->x11.thread = g_thread_create(x11_thread_proc,
-                                       sink, TRUE, &err);
-    if (err || !sink->x11.thread) {
-        GST_ERROR_OBJECT(sink, "Could not create x11 thread");
-    }
-}
 
 static gint
 egl_init (GstGLESPlugin *sink)
@@ -574,6 +560,21 @@ x11_close (GstGLESPlugin *sink)
     }
 }
 
+static void
+x11_thread_init (GstGLESPlugin *sink)
+{
+    GError *err = NULL;
+
+    if (!g_thread_get_initialized())
+        g_thread_init (NULL);
+
+    sink->x11.thread = g_thread_create(x11_thread_proc,
+                                       sink, TRUE, &err);
+    if (err || !sink->x11.thread) {
+        GST_ERROR_OBJECT(sink, "Could not create x11 thread");
+    }
+}
+
 /* x11 thread mian function */
 static gpointer
 x11_thread_proc (gpointer data)
@@ -648,7 +649,7 @@ gl_thread_proc (gpointer data)
     GstGLESThread *thread = &sink->gl_thread;
 
     thread->running = setup_gl_context (sink) == 0;
-    init_x11_thread (sink);
+    x11_thread_init (sink);
 
     g_mutex_lock (thread->data_lock);
     while (thread->running) {
