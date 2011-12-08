@@ -291,22 +291,6 @@ gl_draw_onscreen (GstGLESPlugin *sink)
 /* EGL implementation */
 
 static void
-init_gl_thread (GstGLESPlugin *sink)
-{
-    GstGLESThread *thread = &sink->gl_thread;
-    GError *err = NULL;
-
-    if (!g_thread_get_initialized())
-        g_thread_init (NULL);
-
-    thread->handle = g_thread_create(gl_thread_proc,
-                                     sink, TRUE, &err);
-    if (err || !sink->gl_thread.handle) {
-        GST_ERROR_OBJECT(sink, "Could not create gl thread");
-    }
-}
-
-static void
 init_x11_thread (GstGLESPlugin *sink)
 {
     GError *err = NULL;
@@ -625,6 +609,22 @@ x11_thread_proc (gpointer data)
     return 0;
 }
 
+static void
+gl_thread_init (GstGLESPlugin *sink)
+{
+    GstGLESThread *thread = &sink->gl_thread;
+    GError *err = NULL;
+
+    if (!g_thread_get_initialized())
+        g_thread_init (NULL);
+
+    thread->handle = g_thread_create(gl_thread_proc,
+                                     sink, TRUE, &err);
+    if (err || !sink->gl_thread.handle) {
+        GST_ERROR_OBJECT(sink, "Could not create gl thread");
+    }
+}
+
 /* gl thread main function */
 static gpointer
 gl_thread_proc (gpointer data)
@@ -932,7 +932,7 @@ gst_gles_plugin_preroll (GstBaseSink * basesink, GstBuffer * buf)
     GstGLESThread *thread = &sink->gl_thread;
     if (!thread->running) {
         thread->buf = buf;
-        init_gl_thread(sink);
+        gl_thread_init(sink);
 
         g_mutex_lock (thread->render_lock);
         g_cond_wait (thread->render_signal, thread->render_lock);
