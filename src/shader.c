@@ -26,9 +26,12 @@
 #include <GLES2/gl2.h>
 
 #include "shader.h"
+#include "gstglesplugin.h"
 
 /* FIXME: Should be part of the GLES headers */
 #define GL_NVIDIA_PLATFORM_BINARY_NV                            0x890B
+
+GST_DEBUG_CATEGORY_EXTERN (gst_gles_plugin_debug);
 
 
 static const gchar* shader_basenames[] = {
@@ -160,11 +163,13 @@ gl_load_source_shader (GstElement *sink, const char *shader_filename,
 static GLuint
 gl_load_shader (GstElement *sink, const gchar *basename, const GLenum type)
 {
-    GLuint shader;
+    GstGLESPlugin *el = GST_GLES_PLUGIN (sink);
     gchar *filename;
+    GLuint shader;
 
     filename = g_strdup_printf ("%s/%s%s", DATA_DIR, basename,
                                 SHADER_EXT_BINARY);
+    GST_DEBUG_OBJECT (el, "Load binary shader from %s", filename);
 
     shader = gl_load_binary_shader (sink, filename, type);
     if (!shader) {
@@ -172,6 +177,7 @@ gl_load_shader (GstElement *sink, const gchar *basename, const GLenum type)
         filename = g_strdup_printf ("%s/%s%s", DATA_DIR,
                                     basename,
                                     SHADER_EXT_SOURCE);
+        GST_DEBUG_OBJECT(el, "Load source shader from %s", filename);
 
         shader = gl_load_source_shader(sink, filename, type);
     }
