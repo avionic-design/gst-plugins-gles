@@ -230,8 +230,8 @@ gl_init_shader (GstElement *sink, GstGLESShader *shader,
     /* check linker status */
     glGetProgramiv(shader->program, GL_LINK_STATUS, &linked);
     if(!linked) {
-        GST_ERROR_OBJECT(sink, "Linker failure");
         GLint info_len = 0;
+        GST_ERROR_OBJECT(sink, "Linker failure");
 
         glGetProgramiv(shader->program, GL_INFO_LOG_LENGTH, &info_len);
         if(info_len > 1) {
