@@ -398,8 +398,10 @@ egl_init (GstGLESPlugin *sink)
 }
 
 static void
-egl_close(GstGLESContext *context)
+egl_close(GstGLESPlugin *sink)
 {
+    GstGLESContext *context = &sink->gl_thread.gles;
+
     const GLuint framebuffers[] = {
         context->framebuffer
     };
@@ -528,7 +530,6 @@ gl_thread_proc (gpointer data)
 {
     GstGLESPlugin *sink = GST_GLES_PLUGIN (data);
     GstGLESThread *thread = &sink->gl_thread;
-    GstGLESContext *gles = &thread->gles;
 
     thread->running = setup_gl_context (sink) == 0;
     init_x11_thread (sink);
@@ -559,7 +560,7 @@ gl_thread_proc (gpointer data)
     g_mutex_unlock (thread->render_lock);
 
     stop_x11_thread (sink);
-    egl_close(gles);
+    egl_close(sink);
     x11_close(sink);
     return 0;
 }
@@ -587,7 +588,7 @@ setup_gl_context (GstGLESPlugin *sink)
                           SHADER_DEINT_LINEAR);
     if (ret < 0) {
         GST_ERROR_OBJECT (sink, "Could not initialize shader: %d", ret);
-        egl_close (&sink->gl_thread.gles);
+        egl_close (sink);
         x11_close (sink);
         return -ENOMEM;
     }
@@ -601,7 +602,7 @@ setup_gl_context (GstGLESPlugin *sink)
     ret = gl_init_shader (GST_ELEMENT (sink), &gles->scale, SHADER_COPY);
     if (ret < 0) {
         GST_ERROR_OBJECT (sink, "Could not initialize shader: %d", ret);
-        egl_close (gles);
+        egl_close (sink);
         x11_close (sink);
         return -ENOMEM;
     }
