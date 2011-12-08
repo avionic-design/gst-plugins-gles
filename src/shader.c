@@ -89,46 +89,66 @@ cleanup:
     return -EINVAL;
 }
 
-/* load and compile a shader src into a
- * shader program */
+/* load and compile a shader src into a shader program */
 static GLuint
-gl_load_source_shader (GstElement *sink,
-             const char *shader_src, GLenum type)
+gl_load_source_shader (GstElement *sink, const char *shader_filename,
+                       GLenum type)
 {
-    GLuint shader;
+    GFile *shader_file;
+    char *shader_src;
     GLint compiled;
-    GLint src_len;
+    GLuint src_len;
+    GLuint shader;
+    GError *err;
 
     /* create a shader object */
     shader = glCreateShader (type);
     if (shader == 0) {
-        GST_ERROR_OBJECT(sink, "Could not create shader object");
+        GST_ERROR_OBJECT (sink, "Could not create shader object");
+        return 0;
+    }
+
+    /* read shader source from file */
+    shader_file = g_file_new_for_path (shader_filename);
+    if (!g_file_load_contents (shader_file, NULL, &shader_src, &src_len,
+                               NULL, &err)) {
+        GST_ERROR_OBJECT (sink, "Could not read shader source: %s\n",
+                         err->message);
+        g_free (err);
+        g_object_unref (shader_file);
+        glDeleteShader (shader);
         return 0;
     }
 
     /* load source into shader object */
-    src_len = (GLint) strlen(shader_src);
-    glShaderSource (shader, 1, &shader_src, &src_len);
+    src_len = (GLint) strlen (shader_src);
+    glShaderSource (shader, 1, (const GLchar**) &shader_src,
+                    (const GLint*) &src_len);
+
+    /* shader code has been loaded into GL, free all resources
+     * we have used to load the shader */
+    g_free (shader_src);
+    g_object_unref (shader_file);
 
     /* compile the shader */
     glCompileShader (shader);
 
     /* check compiler status */
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
+    glGetShaderiv (shader, GL_COMPILE_STATUS, &compiled);
     if (!compiled) {
         GLint info_len = 0;
 
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_len);
+        glGetShaderiv (shader, GL_INFO_LOG_LENGTH, &info_len);
         if(info_len > 1) {
-            char *info_log = malloc(sizeof(char) * info_len);
-            glGetShaderInfoLog(shader, info_len, NULL, info_log);
+            char *info_log = malloc (sizeof(char) * info_len);
+            glGetShaderInfoLog (shader, info_len, NULL, info_log);
 
-            GST_ERROR_OBJECT(sink, "Failed to compile shader: %s", info_log);
-            free(info_log);
+            GST_ERROR_OBJECT (sink, "Failed to compile shader: %s", info_log);
+            free (info_log);
         }
 
-        glDeleteShader(shader);
-        return 0;
+        glDeleteShader (shader);
+        shader = 0;
     }
 
     return shader;
