@@ -46,47 +46,46 @@ static const gchar* shader_basenames[] = {
 #define VERTEX_SHADER_BASENAME "vertex"
 
 static GLuint
-gl_load_binary_shader(GstElement *sink,
-                      const char *filename, GLenum type)
+gl_load_binary_shader (GstElement *sink, const char *filename,
+                       GLenum type)
 {
-    GCancellable *cancellable;
-    GLbyte *binary;
+    GLuint shader = 0;
     GLsizei length;
-    GLuint shader;
+    GLbyte *binary;
     GFile *file;
     GLint err;
 
-    cancellable = g_cancellable_new();
-    file = g_file_new_for_path(filename);
-
+    file = g_file_new_for_path (filename);
     /* create a shader object */
     shader = glCreateShader (type);
     if (shader == 0) {
         GST_ERROR_OBJECT(sink, "Could not create shader object");
-        return -ENOMEM;
+        goto cleanup;
     }
 
-    if (!g_file_load_contents(file, cancellable, (char**)&binary,
-                             (gsize*)&length, NULL, NULL)) {
+    if (!g_file_load_contents (file, NULL, (char**)&binary,
+                               (gsize*)&length, NULL, NULL)) {
         GST_ERROR_OBJECT(sink, "Could not read binary shader from %s",
                          filename);
+        glDeleteShader (shader);
+        shader = 0;
         goto cleanup;
     }
 
-    glShaderBinary(1, &shader, GL_NVIDIA_PLATFORM_BINARY_NV,
-                   binary, length);
+    glShaderBinary (1, &shader, GL_NVIDIA_PLATFORM_BINARY_NV,
+                    binary, length);
 
-    err = glGetError();
+    err = glGetError ();
     if (err != GL_NO_ERROR) {
         GST_ERROR_OBJECT (sink, "Error loading binary shader: %d\n", err);
-        goto cleanup;
+        glDeleteShader (shader);
+        shader = 0;
     }
 
-    return shader;
-
 cleanup:
-    glDeleteShader (shader);
-    return -EINVAL;
+    g_free (binary);
+    g_object_unref (file);
+    return shader;
 }
 
 /* load and compile a shader src into a shader program */
