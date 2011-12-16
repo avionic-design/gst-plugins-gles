@@ -981,17 +981,12 @@ gst_gles_plugin_render (GstBaseSink *basesink, GstBuffer *buf)
     g_mutex_unlock (thread->data_lock);
 
     g_mutex_lock (thread->render_lock);
-
-#if 1
-    g_cond_wait (thread->render_signal, thread->render_lock);
-#else
     g_get_current_time (&timeout);
-    g_time_val_add (&timeout, 500);
-    /* FIXME: timed_wait always fails. */
-    ret = g_cond_timed_wait (thread->render_signal, thread->render_lock,
-                             &timeout);
-    GST_DEBUG_OBJECT (basesink, "Render %s", ret ? "done" : "with timeout");
-#endif
+    g_time_val_add (&timeout, 500 * 1000);
+    ret = g_cond_timed_wait (thread->render_signal,
+                             thread->render_lock, &timeout);
+    if (!ret)
+        GST_DEBUG_OBJECT (basesink, "Render had a timeout");
     g_mutex_unlock (thread->render_lock);
 
     return ret ? GST_FLOW_OK : GST_FLOW_ERROR;
