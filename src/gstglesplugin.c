@@ -527,22 +527,36 @@ x11_init (GstGLESPlugin *sink, gint width, gint height)
     swa.event_mask =
             StructureNotifyMask | ExposureMask | VisibilityChangeMask;
 
-    sink->x11.window = XCreateWindow (
-                sink->x11.display, root,
-                0, 0, width, height, 0,
-                CopyFromParent, InputOutput,
-                CopyFromParent, CWEventMask,
-                &swa);
+    if (!sink->x11.window) {
+        sink->x11.window = XCreateWindow (
+                    sink->x11.display, root,
+                    0, 0, width, height, 0,
+                    CopyFromParent, InputOutput,
+                    CopyFromParent, CWEventMask,
+                    &swa);
 
-    XSetWindowBackgroundPixmap (sink->x11.display, sink->x11.window,
-                                None);
+        XSetWindowBackgroundPixmap (sink->x11.display, sink->x11.window,
+                                    None);
 
-    hints.input = True;
-    hints.flags = InputHint;
-    XSetWMHints(sink->x11.display, sink->x11.window, &hints);
+        hints.input = True;
+        hints.flags = InputHint;
+        XSetWMHints(sink->x11.display, sink->x11.window, &hints);
 
-    XMapWindow (sink->x11.display, sink->x11.window);
-    XStoreName (sink->x11.display, sink->x11.window, "GLESSink");
+        XMapWindow (sink->x11.display, sink->x11.window);
+        XStoreName (sink->x11.display, sink->x11.window, "GLESSink");
+    } else {
+        Window root;
+        guint x, y, border, depth;
+        /* change event mask, so we get resize notifications */
+        XChangeWindowAttributes (sink->x11.display, sink->x11.window,
+                                 CWEventMask, &swa);
+
+        /* retrieve the current window geometry */
+        XGetGeometry (sink->x11.display, sink->x11.window, &root,
+                      &x, &y, &sink->x11.width, &sink->x11.height,
+                      &border, &depth);
+    }
+
     XUnlockDisplay (sink->x11.display);
 
     return 0;
@@ -553,7 +567,12 @@ x11_close (GstGLESPlugin *sink)
 {
     if (sink->x11.display) {
         XLockDisplay (sink->x11.display);
-        XDestroyWindow(sink->x11.display, sink->x11.window);
+
+        /* only destroy the window if we created it, windows
+          owned by the application stay untouched */
+        if (!sink->x11.external_window)
+            XDestroyWindow(sink->x11.display, sink->x11.window);
+
         XUnlockDisplay (sink->x11.display);
         XCloseDisplay(sink->x11.display);
         sink->x11.display = NULL;
@@ -934,6 +953,10 @@ gst_gles_plugin_preroll (GstBaseSink * basesink, GstBuffer * buf)
     GstGLESThread *thread = &sink->gl_thread;
     if (!thread->running) {
         thread->buf = buf;
+
+        /* give the application the opportunity to head in a
+           xwindow id to use as render target */
+        gst_x_overlay_prepare_xwindow_id (GST_X_OVERLAY (sink));
         gl_thread_init(sink);
 
         g_mutex_lock (thread->render_lock);
@@ -1006,8 +1029,16 @@ gst_gles_xoverlay_set_window_handle (GstXOverlay *overlay, guintptr handle)
 {
     GstGLESPlugin *sink = GST_GLES_PLUGIN (overlay);
 
-    // destroy egl surface and x11 window
-    GST_ERROR_OBJECT (sink, "Setting window handle is not yet supported.");
+    /* if we have not created a window yet, we'll use the application
+      provided one. runtime switching is not yet supported */
+    GST_DEBUG_OBJECT (sink, "Setting window handle");
+    if (sink->x11.window == 0) {
+        GST_DEBUG_OBJECT (sink, "register new window id: %d", handle);
+        sink->x11.window = handle;
+        sink->x11.external_window = TRUE;
+    } else {
+        GST_ERROR_OBJECT (sink, "Changing window handle is not yet supported.");
+    }
 }
 
 static void

@@ -70,6 +70,7 @@ struct _GstGLESWindow
     /* x11 context */
     Display *display;
     Window window;
+    gboolean external_window;
 };
 
 struct _GstGLESContext
