@@ -761,7 +761,9 @@ setup_gl_context (GstGLESPlugin *sink)
     gles->initialized = TRUE;
 
     /* finally announce the window handle to controling app */
-    gst_x_overlay_got_window_handle (GST_X_OVERLAY (sink), sink->x11.window);
+    if (!sink->x11.external_window)
+        gst_x_overlay_got_window_handle (GST_X_OVERLAY (sink),
+                                         sink->x11.window);
     return 0;
 }
 
