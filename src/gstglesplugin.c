@@ -548,8 +548,10 @@ x11_init (GstGLESPlugin *sink, gint width, gint height)
         Window root;
         guint x, y, border, depth;
         /* change event mask, so we get resize notifications */
-        XChangeWindowAttributes (sink->x11.display, sink->x11.window,
-                                 CWEventMask, &swa);
+        XSelectInput (sink->x11.display, sink->x11.window,
+                      ExposureMask | StructureNotifyMask |
+                      PointerMotionMask | KeyPressMask |
+                      KeyReleaseMask);
 
         /* retrieve the current window geometry */
         XGetGeometry (sink->x11.display, sink->x11.window, &root,
