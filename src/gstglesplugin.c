@@ -715,10 +715,6 @@ gl_thread_proc (gpointer data)
         g_mutex_unlock (thread->render_lock);
     }
 
-    g_mutex_lock (thread->render_lock);
-    g_cond_signal (thread->render_signal);
-    g_mutex_unlock (thread->render_lock);
-
     x11_thread_stop (sink);
     egl_close(sink);
     x11_close(sink);
