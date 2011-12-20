@@ -546,7 +546,8 @@ x11_init (GstGLESPlugin *sink, gint width, gint height)
         XStoreName (sink->x11.display, sink->x11.window, "GLESSink");
     } else {
         Window root;
-        guint x, y, border, depth;
+        guint border, depth;
+        int x, y;
         /* change event mask, so we get resize notifications */
         XSelectInput (sink->x11.display, sink->x11.window,
                       ExposureMask | StructureNotifyMask |
