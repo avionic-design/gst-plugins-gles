@@ -545,7 +545,6 @@ x11_init (GstGLESPlugin *sink, gint width, gint height)
         XMapWindow (sink->x11.display, sink->x11.window);
         XStoreName (sink->x11.display, sink->x11.window, "GLESSink");
     } else {
-        Window root;
         guint border, depth;
         int x, y;
         /* change event mask, so we get resize notifications */
