@@ -677,6 +677,8 @@ gl_thread_proc (gpointer data)
 {
     GstGLESPlugin *sink = GST_GLES_PLUGIN (data);
     GstGLESThread *thread = &sink->gl_thread;
+    GTimeVal timeout;
+    gboolean ret;
 
     thread->running = setup_gl_context (sink) == 0;
     x11_thread_init (sink);
@@ -684,8 +686,17 @@ gl_thread_proc (gpointer data)
     while (thread->running) {
         g_mutex_lock (thread->data_lock);
         /* wait till gst_gles_plugin_render has some data for us */
-        while (!thread->buf && thread->running)
-            g_cond_wait (thread->data_signal, thread->data_lock);
+        while (!thread->buf && thread->running) {
+            /* FIXME: We use the timeout as a workaround for cases were we
+             *        get a flow error from another pipeline element.
+             *        In such a case we sometimes run into a dead-lock */
+            g_get_current_time (&timeout);
+            g_time_val_add (&timeout, 500 * 1000);
+            ret = g_cond_timed_wait (thread->data_signal,
+                                     thread->data_lock, &timeout);
+            if (!ret)
+                g_debug("%s: timeout", __func__);
+        }
 
         if (thread->buf) {
             XLockDisplay (sink->x11.display);
