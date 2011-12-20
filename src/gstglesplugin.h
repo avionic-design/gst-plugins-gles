@@ -62,7 +62,7 @@ struct _GstGLESWindow
 {
     /* thread context */
     GThread *thread;
-    gboolean running;
+    volatile gboolean running;
 
     gint width;
     gint height;
@@ -105,12 +105,12 @@ struct _GstGLESThread
     GCond *data_signal;
     GMutex *render_lock;
     GMutex *data_lock;
-    gboolean running;
+    volatile gboolean running;
 
     GstGLESContext gles;
 
     /* render data */
-    GstBuffer *buf;
+    volatile GstBuffer *buf;
 };
 
 struct _GstGLESPlugin
