@@ -573,7 +573,9 @@ x11_close (GstGLESPlugin *sink)
         /* only destroy the window if we created it, windows
           owned by the application stay untouched */
         if (!sink->x11.external_window)
-            XDestroyWindow(sink->x11.display, sink->x11.window);
+            XDestroyWindow (sink->x11.display, sink->x11.window);
+        else
+            XSelectInput (sink->x11.display, sink->x11.window, 0);
 
         XUnlockDisplay (sink->x11.display);
         XCloseDisplay(sink->x11.display);
