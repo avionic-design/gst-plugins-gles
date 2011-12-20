@@ -681,8 +681,8 @@ gl_thread_proc (gpointer data)
     thread->running = setup_gl_context (sink) == 0;
     x11_thread_init (sink);
 
-    g_mutex_lock (thread->data_lock);
     while (thread->running) {
+        g_mutex_lock (thread->data_lock);
         /* wait till gst_gles_plugin_render has some data for us */
         while (!thread->buf && thread->running)
             g_cond_wait (thread->data_signal, thread->data_lock);
@@ -694,13 +694,13 @@ gl_thread_proc (gpointer data)
             thread->buf = NULL;
             XUnlockDisplay (sink->x11.display);
         }
+        g_mutex_unlock (thread->data_lock);
 
         /* signal gst_gles_plugin_render that we are done */
         g_mutex_lock (thread->render_lock);
         g_cond_signal (thread->render_signal);
         g_mutex_unlock (thread->render_lock);
     }
-    g_mutex_unlock (thread->data_lock);
 
     g_mutex_lock (thread->render_lock);
     g_cond_signal (thread->render_signal);
