@@ -845,7 +845,7 @@ gst_gles_plugin_init (GstGLESPlugin * sink,
         GST_ERROR_OBJECT(sink, "XInitThreads failed");
     }
 
-    gst_base_sink_set_max_lateness (GST_BASE_SINK (sink), 20 * GST_MSECOND);
+    gst_base_sink_set_max_lateness (GST_BASE_SINK (sink), 10 * GST_MSECOND);
     gst_base_sink_set_qos_enabled(GST_BASE_SINK (sink), TRUE);
 }
 
