@@ -577,6 +577,7 @@ x11_close (GstGLESPlugin *sink)
         else
             XSelectInput (sink->x11.display, sink->x11.window, 0);
 
+        XSync (sink->x11.display, FALSE);
         XUnlockDisplay (sink->x11.display);
         XCloseDisplay(sink->x11.display);
         sink->x11.display = NULL;
