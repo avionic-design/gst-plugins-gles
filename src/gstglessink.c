@@ -55,7 +55,7 @@
 
 #include <unistd.h>
 
-#include "gstglesplugin.h"
+#include "gstglessink.h"
 #include "shader.h"
 
 GST_DEBUG_CATEGORY (gst_gles_sink_debug);

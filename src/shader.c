@@ -26,7 +26,7 @@
 #include <GLES2/gl2.h>
 
 #include "shader.h"
-#include "gstglesplugin.h"
+#include "gstglessink.h"
 
 /* FIXME: Should be part of the GLES headers */
 #define GL_NVIDIA_PLATFORM_BINARY_NV                            0x890B
