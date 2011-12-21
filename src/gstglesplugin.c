@@ -58,7 +58,7 @@
 #include "gstglesplugin.h"
 #include "shader.h"
 
-GST_DEBUG_CATEGORY (gst_gles_plugin_debug);
+GST_DEBUG_CATEGORY (gst_gles_sink_debug);
 
 
 typedef enum _GstGLESPluginProperties  GstGLESPluginProperties;
@@ -69,29 +69,29 @@ enum _GstGLESPluginProperties
   PROP_SILENT
 };
 
-GST_BOILERPLATE_WITH_INTERFACE (GstGLESPlugin, gst_gles_plugin, GstVideoSink,
+GST_BOILERPLATE_WITH_INTERFACE (GstGLESSink, gst_gles_sink, GstVideoSink,
     GST_TYPE_VIDEO_SINK, GstXOverlay, GST_TYPE_X_OVERLAY, gst_gles_xoverlay)
 
-static void gst_gles_plugin_set_property (GObject * object, guint prop_id,
+static void gst_gles_sink_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
-static void gst_gles_plugin_get_property (GObject * object, guint prop_id,
+static void gst_gles_sink_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 
-static gboolean gst_gles_plugin_start (GstBaseSink * basesink);
-static gboolean gst_gles_plugin_stop (GstBaseSink * basesink);
-static gboolean gst_gles_plugin_set_caps (GstBaseSink * basesink,
+static gboolean gst_gles_sink_start (GstBaseSink * basesink);
+static gboolean gst_gles_sink_stop (GstBaseSink * basesink);
+static gboolean gst_gles_sink_set_caps (GstBaseSink * basesink,
                                           GstCaps * caps);
-static GstFlowReturn gst_gles_plugin_render (GstBaseSink * basesink,
+static GstFlowReturn gst_gles_sink_render (GstBaseSink * basesink,
                                              GstBuffer * buf);
-static GstFlowReturn gst_gles_plugin_preroll (GstBaseSink * basesink,
+static GstFlowReturn gst_gles_sink_preroll (GstBaseSink * basesink,
                                               GstBuffer * buf);
-static void gst_gles_plugin_finalize (GObject *gobject);
-static GstStateChangeReturn gst_gles_plugin_change_state (GstElement *element,
+static void gst_gles_sink_finalize (GObject *gobject);
+static GstStateChangeReturn gst_gles_sink_change_state (GstElement *element,
                                                           GstStateChange transition);
-static gint setup_gl_context (GstGLESPlugin *sink);
+static gint setup_gl_context (GstGLESSink *sink);
 static gpointer gl_thread_proc (gpointer data);
 static gpointer x11_thread_proc (gpointer data);
-static void x11_thread_stop (GstGLESPlugin *sink);
+static void x11_thread_stop (GstGLESSink *sink);
 
 #define WxH ", width = (int) [ 16, 4096 ], height = (int) [ 16, 4096 ]"
 
@@ -118,7 +118,7 @@ gl_create_texture(GLuint tex_filter)
 }
 
 static void
-gl_gen_framebuffer(GstGLESPlugin *sink)
+gl_gen_framebuffer(GstGLESSink *sink)
 {
     GstGLESContext *gles = &sink->gl_thread.gles;
     glGenFramebuffers (1, &gles->framebuffer);
@@ -137,7 +137,7 @@ gl_gen_framebuffer(GstGLESPlugin *sink)
 }
 
 static void
-gl_init_textures (GstGLESPlugin *sink)
+gl_init_textures (GstGLESSink *sink)
 {
     sink->gl_thread.gles.y_tex.id = gl_create_texture(GL_NEAREST);
     sink->gl_thread.gles.u_tex.id = gl_create_texture(GL_NEAREST);
@@ -145,7 +145,7 @@ gl_init_textures (GstGLESPlugin *sink)
 }
 
 static void
-gl_load_texture (GstGLESPlugin *sink, GstBuffer *buf)
+gl_load_texture (GstGLESSink *sink, GstBuffer *buf)
 {
     GstGLESContext *gles = &sink->gl_thread.gles;
     /* y component */
@@ -180,7 +180,7 @@ gl_load_texture (GstGLESPlugin *sink, GstBuffer *buf)
 }
 
 static void
-gl_draw_fbo (GstGLESPlugin *sink, GstBuffer *buf)
+gl_draw_fbo (GstGLESSink *sink, GstBuffer *buf)
 {
     GLfloat vVertices[] =
     {
@@ -228,7 +228,7 @@ gl_draw_fbo (GstGLESPlugin *sink, GstBuffer *buf)
 }
 
 void
-gl_draw_onscreen (GstGLESPlugin *sink)
+gl_draw_onscreen (GstGLESSink *sink)
 {
     GLfloat vVertices[] =
     {
@@ -292,7 +292,7 @@ gl_draw_onscreen (GstGLESPlugin *sink)
 
 
 static gint
-egl_init (GstGLESPlugin *sink)
+egl_init (GstGLESSink *sink)
 {
     const EGLint configAttribs[] =
     {
@@ -377,7 +377,7 @@ egl_init (GstGLESPlugin *sink)
  */
 
 static void
-egl_close_file (GstGLESPlugin *sink, const gchar *filename)
+egl_close_file (GstGLESSink *sink, const gchar *filename)
 {
     const gchar *target_file;
     GError *err = NULL;
@@ -435,7 +435,7 @@ cleanup:
 }
 
 static void
-egl_close_handles (GstGLESPlugin *sink)
+egl_close_handles (GstGLESSink *sink)
 {
     GError *err = NULL;
     GDir *directory;
@@ -467,7 +467,7 @@ cleanup:
 
 
 static void
-egl_close(GstGLESPlugin *sink)
+egl_close(GstGLESSink *sink)
 {
     GstGLESContext *context = &sink->gl_thread.gles;
 
@@ -510,7 +510,7 @@ egl_close(GstGLESPlugin *sink)
 }
 
 static gint
-x11_init (GstGLESPlugin *sink, gint width, gint height)
+x11_init (GstGLESSink *sink, gint width, gint height)
 {
     Window root;
     XSetWindowAttributes swa;
@@ -565,7 +565,7 @@ x11_init (GstGLESPlugin *sink, gint width, gint height)
 }
 
 static void
-x11_close (GstGLESPlugin *sink)
+x11_close (GstGLESSink *sink)
 {
     if (sink->x11.display) {
         XLockDisplay (sink->x11.display);
@@ -585,7 +585,7 @@ x11_close (GstGLESPlugin *sink)
 }
 
 static void
-x11_thread_init (GstGLESPlugin *sink)
+x11_thread_init (GstGLESSink *sink)
 {
     GError *err = NULL;
 
@@ -600,7 +600,7 @@ x11_thread_init (GstGLESPlugin *sink)
 }
 
 static void
-x11_thread_stop (GstGLESPlugin *sink)
+x11_thread_stop (GstGLESSink *sink)
 {
     if (sink->x11.running) {
         sink->x11.running = FALSE;
@@ -612,7 +612,7 @@ x11_thread_stop (GstGLESPlugin *sink)
 static gpointer
 x11_thread_proc (gpointer data)
 {
-    GstGLESPlugin *sink = GST_GLES_PLUGIN (data);
+    GstGLESSink *sink = GST_GLES_SINK (data);
     GstGLESWindow *x11 = &sink->x11;
 
     x11->running = TRUE;
@@ -644,7 +644,7 @@ x11_thread_proc (gpointer data)
 }
 
 static void
-gl_thread_init (GstGLESPlugin *sink)
+gl_thread_init (GstGLESSink *sink)
 {
     GstGLESThread *thread = &sink->gl_thread;
     GError *err = NULL;
@@ -660,7 +660,7 @@ gl_thread_init (GstGLESPlugin *sink)
 }
 
 static void
-gl_thread_stop (GstGLESPlugin *sink)
+gl_thread_stop (GstGLESSink *sink)
 {
     if (sink->gl_thread.running) {
         sink->gl_thread.running = FALSE;
@@ -678,7 +678,7 @@ gl_thread_stop (GstGLESPlugin *sink)
 static gpointer
 gl_thread_proc (gpointer data)
 {
-    GstGLESPlugin *sink = GST_GLES_PLUGIN (data);
+    GstGLESSink *sink = GST_GLES_SINK (data);
     GstGLESThread *thread = &sink->gl_thread;
     GTimeVal timeout;
     gboolean ret;
@@ -688,7 +688,7 @@ gl_thread_proc (gpointer data)
 
     while (thread->running) {
         g_mutex_lock (thread->data_lock);
-        /* wait till gst_gles_plugin_render has some data for us */
+        /* wait till gst_gles_sink_render has some data for us */
         while (!thread->buf && thread->running) {
             /* FIXME: We use the timeout as a workaround for cases were we
              *        get a flow error from another pipeline element.
@@ -710,7 +710,7 @@ gl_thread_proc (gpointer data)
         }
         g_mutex_unlock (thread->data_lock);
 
-        /* signal gst_gles_plugin_render that we are done */
+        /* signal gst_gles_sink_render that we are done */
         g_mutex_lock (thread->render_lock);
         g_cond_signal (thread->render_signal);
         g_mutex_unlock (thread->render_lock);
@@ -723,7 +723,7 @@ gl_thread_proc (gpointer data)
 }
 
 static gint
-setup_gl_context (GstGLESPlugin *sink)
+setup_gl_context (GstGLESSink *sink)
 {
     GstGLESContext *gles = &sink->gl_thread.gles;
     gint ret;
@@ -781,14 +781,14 @@ setup_gl_context (GstGLESPlugin *sink)
 /* GObject vmethod implementations */
 
 static void
-gst_gles_plugin_base_init (gpointer gclass)
+gst_gles_sink_base_init (gpointer gclass)
 {
   GstElementClass *element_class = GST_ELEMENT_CLASS (gclass);
 
-  element_class->change_state = gst_gles_plugin_change_state;
+  element_class->change_state = gst_gles_sink_change_state;
 
   gst_element_class_set_details_simple(element_class,
-    "GLESPlugin sink",
+    "GLES sink",
     "Sink/Video",
     "Output video using Open GL ES 2.0",
     "Julian Scheel <julian jusst de>");
@@ -799,26 +799,26 @@ gst_gles_plugin_base_init (gpointer gclass)
 
 /* initialize the plugin's class */
 static void
-gst_gles_plugin_class_init (GstGLESPluginClass * klass)
+gst_gles_sink_class_init (GstGLESSinkClass * klass)
 {
   GstBaseSinkClass *basesink_class = GST_BASE_SINK_CLASS (klass);
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
 
-  gobject_class->finalize = gst_gles_plugin_finalize;
+  gobject_class->finalize = gst_gles_sink_finalize;
 
-  gobject_class->set_property = gst_gles_plugin_set_property;
-  gobject_class->get_property = gst_gles_plugin_get_property;
+  gobject_class->set_property = gst_gles_sink_set_property;
+  gobject_class->get_property = gst_gles_sink_get_property;
 
   g_object_class_install_property (gobject_class, PROP_SILENT,
       g_param_spec_boolean ("silent", "Silent", "Produce verbose output ?",
           FALSE, G_PARAM_READWRITE));
 
   /* initialise virtual methods */
-  basesink_class->start = GST_DEBUG_FUNCPTR (gst_gles_plugin_start);
-  basesink_class->stop = GST_DEBUG_FUNCPTR (gst_gles_plugin_stop);
-  basesink_class->render = GST_DEBUG_FUNCPTR (gst_gles_plugin_render);
-  basesink_class->preroll = GST_DEBUG_FUNCPTR (gst_gles_plugin_preroll);
-  basesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_gles_plugin_set_caps);
+  basesink_class->start = GST_DEBUG_FUNCPTR (gst_gles_sink_start);
+  basesink_class->stop = GST_DEBUG_FUNCPTR (gst_gles_sink_stop);
+  basesink_class->render = GST_DEBUG_FUNCPTR (gst_gles_sink_render);
+  basesink_class->preroll = GST_DEBUG_FUNCPTR (gst_gles_sink_preroll);
+  basesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_gles_sink_set_caps);
 }
 
 /* entry point to initialize the plug-in
@@ -826,8 +826,8 @@ gst_gles_plugin_class_init (GstGLESPluginClass * klass)
  * register the element factories and other features
  */
 static void
-gst_gles_plugin_init (GstGLESPlugin * sink,
-    GstGLESPluginClass * gclass)
+gst_gles_sink_init (GstGLESSink * sink,
+    GstGLESSinkClass * gclass)
 {
     GstGLESThread *thread = &sink->gl_thread;
     Status ret;
@@ -850,10 +850,10 @@ gst_gles_plugin_init (GstGLESPlugin * sink,
 }
 
 static void
-gst_gles_plugin_set_property (GObject * object, guint prop_id,
+gst_gles_sink_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
-  GstGLESPlugin *filter = GST_GLES_PLUGIN (object);
+  GstGLESSink *filter = GST_GLES_SINK (object);
 
   switch (prop_id) {
     case PROP_SILENT:
@@ -866,10 +866,10 @@ gst_gles_plugin_set_property (GObject * object, guint prop_id,
 }
 
 static void
-gst_gles_plugin_get_property (GObject * object, guint prop_id,
+gst_gles_sink_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec)
 {
-  GstGLESPlugin *filter = GST_GLES_PLUGIN (object);
+  GstGLESSink *filter = GST_GLES_SINK (object);
 
   switch (prop_id) {
     case PROP_SILENT:
@@ -885,16 +885,16 @@ gst_gles_plugin_get_property (GObject * object, guint prop_id,
 
 /* initialisation code */
 static gboolean
-gst_gles_plugin_start (GstBaseSink *basesink)
+gst_gles_sink_start (GstBaseSink *basesink)
 {
     return TRUE;
 }
 
 /* deinitialisation code */
 static gboolean
-gst_gles_plugin_stop (GstBaseSink *basesink)
+gst_gles_sink_stop (GstBaseSink *basesink)
 {
-    GstGLESPlugin *sink = GST_GLES_PLUGIN (basesink);
+    GstGLESSink *sink = GST_GLES_SINK (basesink);
 
     gl_thread_stop (sink);
 
@@ -906,9 +906,9 @@ gst_gles_plugin_stop (GstBaseSink *basesink)
 
 /* this function handles the link with other elements */
 static gboolean
-gst_gles_plugin_set_caps (GstBaseSink *basesink, GstCaps *caps)
+gst_gles_sink_set_caps (GstBaseSink *basesink, GstCaps *caps)
 {
-  GstGLESPlugin *sink = GST_GLES_PLUGIN (basesink);
+  GstGLESSink *sink = GST_GLES_SINK (basesink);
   GstVideoFormat fmt;
   guint display_par_n;
   guint display_par_d;
@@ -953,7 +953,7 @@ gst_gles_plugin_set_caps (GstBaseSink *basesink, GstCaps *caps)
 }
 
 static GstStateChangeReturn
-gst_gles_plugin_change_state (GstElement *element, GstStateChange transition)
+gst_gles_sink_change_state (GstElement *element, GstStateChange transition)
 {
     GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
     ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
@@ -961,9 +961,9 @@ gst_gles_plugin_change_state (GstElement *element, GstStateChange transition)
 }
 
 static GstFlowReturn
-gst_gles_plugin_preroll (GstBaseSink * basesink, GstBuffer * buf)
+gst_gles_sink_preroll (GstBaseSink * basesink, GstBuffer * buf)
 {
-    GstGLESPlugin *sink = GST_GLES_PLUGIN (basesink);
+    GstGLESSink *sink = GST_GLES_SINK (basesink);
     GstGLESThread *thread = &sink->gl_thread;
     if (!thread->running) {
         thread->buf = buf;
@@ -982,9 +982,9 @@ gst_gles_plugin_preroll (GstBaseSink * basesink, GstBuffer * buf)
 }
 
 static GstFlowReturn
-gst_gles_plugin_render (GstBaseSink *basesink, GstBuffer *buf)
+gst_gles_sink_render (GstBaseSink *basesink, GstBuffer *buf)
 {
-    GstGLESPlugin *sink = GST_GLES_PLUGIN (basesink);
+    GstGLESSink *sink = GST_GLES_SINK (basesink);
     GstGLESThread *thread = &sink->gl_thread;
     GTimeVal timeout;
     gboolean ret = TRUE;
@@ -1007,9 +1007,9 @@ gst_gles_plugin_render (GstBaseSink *basesink, GstBuffer *buf)
 }
 
 static void
-gst_gles_plugin_finalize (GObject *gobject)
+gst_gles_sink_finalize (GObject *gobject)
 {
-    GstGLESPlugin *plugin = (GstGLESPlugin *)gobject;
+    GstGLESSink *plugin = (GstGLESSink *)gobject;
     GstGLESThread *thread = &plugin->gl_thread;
 
     gl_thread_stop (plugin);
@@ -1036,7 +1036,7 @@ gst_gles_plugin_finalize (GObject *gobject)
 static void
 gst_gles_xoverlay_set_window_handle (GstXOverlay *overlay, guintptr handle)
 {
-    GstGLESPlugin *sink = GST_GLES_PLUGIN (overlay);
+    GstGLESSink *sink = GST_GLES_SINK (overlay);
 
     /* if we have not created a window yet, we'll use the application
       provided one. runtime switching is not yet supported */
@@ -1057,7 +1057,7 @@ gst_gles_xoverlay_interface_init (GstXOverlayClass *overlay_klass)
 }
 
 static gboolean
-gst_gles_xoverlay_supported (GstGLESPlugin *sink,
+gst_gles_xoverlay_supported (GstGLESSink *sink,
                              GType iface_type)
 {
     GST_DEBUG_OBJECT(sink, "Interface XOverlay supprted");
@@ -1077,11 +1077,11 @@ plugin_init (GstPlugin * plugin)
    *
    * exchange the string 'Template plugin' with your description
    */
-  GST_DEBUG_CATEGORY_INIT (gst_gles_plugin_debug, "glesplugin",
+  GST_DEBUG_CATEGORY_INIT (gst_gles_sink_debug, "glesplugin",
       0, "OpenGL ES 2.0 plugin");
 
-  return gst_element_register (plugin, "glesplugin", GST_RANK_NONE,
-      GST_TYPE_GLES_PLUGIN);
+  return gst_element_register (plugin, "glessink", GST_RANK_NONE,
+      GST_TYPE_GLES_SINK);
 }
 
 /* PACKAGE: this is usually set by autotools depending on some _INIT macro

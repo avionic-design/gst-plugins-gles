@@ -31,7 +31,7 @@
 /* FIXME: Should be part of the GLES headers */
 #define GL_NVIDIA_PLATFORM_BINARY_NV                            0x890B
 
-GST_DEBUG_CATEGORY_EXTERN (gst_gles_plugin_debug);
+GST_DEBUG_CATEGORY_EXTERN (gst_gles_sink_debug);
 
 
 static const gchar* shader_basenames[] = {
@@ -163,7 +163,7 @@ gl_load_source_shader (GstElement *sink, const char *shader_filename,
 static GLuint
 gl_load_shader (GstElement *sink, const gchar *basename, const GLenum type)
 {
-    GstGLESPlugin *el = GST_GLES_PLUGIN (sink);
+    GstGLESSink *el = GST_GLES_SINK (sink);
     gchar *filename;
     GLuint shader;
 

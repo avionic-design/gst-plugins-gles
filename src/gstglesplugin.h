@@ -21,8 +21,8 @@
  * Boston, MA 02111-1307, USA.
  */
 
-#ifndef _GST_GLES_PLUGIN_H__
-#define _GST_GLES_PLUGIN_H__
+#ifndef _GST_GLES_SINK_H__
+#define _GST_GLES_SINK_H__
 
 #include <GLES2/gl2.h>
 #include <EGL/egl.h>
@@ -34,25 +34,25 @@
 
 #include "shader.h"
 
-GST_DEBUG_CATEGORY_EXTERN (gst_gles_plugin_debug);
-#define GST_CAT_DEFAULT gst_gles_plugin_debug
+GST_DEBUG_CATEGORY_EXTERN (gst_gles_sink_debug);
+#define GST_CAT_DEFAULT gst_gles_sink_debug
 
 G_BEGIN_DECLS
 
 /* #defines don't like whitespacey bits */
-#define GST_TYPE_GLES_PLUGIN \
-  (gst_gles_plugin_get_type())
-#define GST_GLES_PLUGIN(obj) \
-  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_GLES_PLUGIN,GstGLESPlugin))
-#define GST_GLES_PLUGIN_CLASS(klass) \
-  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_GLES_PLUGIN,GstGLESPluginClass))
-#define GST_IS_GLES_PLUGIN(obj) \
-  (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_GLES_PLUGIN))
-#define GST_IS_GLES_PLUGIN_TEMPLATE(klass) \
-  (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_GLES_PLUGIN))
+#define GST_TYPE_GLES_SINK \
+  (gst_gles_sink_get_type())
+#define GST_GLES_SINK(obj) \
+  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_GLES_SINK,GstGLESSink))
+#define GST_GLES_SINK_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_GLES_SINK,GstGLESSinkClass))
+#define GST_IS_GLES_SINK(obj) \
+  (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_GLES_SINK))
+#define GST_IS_GLES_SINK_TEMPLATE(klass) \
+  (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_GLES_SINK))
 
-typedef struct _GstGLESPlugin      GstGLESPlugin;
-typedef struct _GstGLESPluginClass GstGLESPluginClass;
+typedef struct _GstGLESSink        GstGLESSink;
+typedef struct _GstGLESSinkClass   GstGLESSinkClass;
 
 typedef struct _GstGLESWindow      GstGLESWindow;
 typedef struct _GstGLESContext     GstGLESContext;
@@ -113,7 +113,7 @@ struct _GstGLESThread
     volatile GstBuffer *buf;
 };
 
-struct _GstGLESPlugin
+struct _GstGLESSink
 {
   GstVideoSink basesink;
 
@@ -130,13 +130,13 @@ struct _GstGLESPlugin
   gboolean silent;
 };
 
-struct _GstGLESPluginClass
+struct _GstGLESSinkClass
 {
   GstVideoSinkClass basesinkclass;
 };
 
-GType gst_gles_plugin_get_type (void);
+GType gst_gles_sink_get_type (void);
 
 G_END_DECLS
 
-#endif /* _GST_GLES_PLUGIN_H__ */
+#endif /* _GST_GLES_SINK_H__ */
