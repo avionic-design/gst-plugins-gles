@@ -52,9 +52,9 @@ static GLuint
 gl_load_binary_shader (GstElement *sink, const char *filename,
                        GLenum type)
 {
-	GLbyte *binary = NULL;
-	GFile *file = NULL;
-	GLuint shader = 0;
+    GLbyte *binary = NULL;
+    GFile *file = NULL;
+    GLuint shader = 0;
     GLsizei length;
     GLint err;
 
@@ -97,8 +97,8 @@ gl_load_source_shader (GstElement *sink, const char *shader_filename,
                        GLenum type)
 {
     GFile *shader_file;
-	GLuint shader = 0;
-	char *shader_src;
+    GLuint shader = 0;
+    char *shader_src;
     GLint compiled;
     GLuint src_len;
     GError *err;
