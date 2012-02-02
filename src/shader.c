@@ -100,7 +100,7 @@ gl_load_source_shader (GstElement *sink, const char *shader_filename,
     GLuint shader = 0;
     char *shader_src;
     GLint compiled;
-    GLuint src_len;
+    gsize src_len;
     GError *err;
 
     /* create a shader object */
@@ -123,7 +123,7 @@ gl_load_source_shader (GstElement *sink, const char *shader_filename,
     }
 
     /* load source into shader object */
-    src_len = (GLint) strlen (shader_src);
+    src_len = strlen (shader_src);
     glShaderSource (shader, 1, (const GLchar**) &shader_src,
                     (const GLint*) &src_len);
 

@@ -558,7 +558,7 @@ x11_init (GstGLESSink *sink, gint width, gint height)
 
         /* retrieve the current window geometry */
         XGetGeometry (sink->x11.display, sink->x11.window, &root,
-                      &x, &y, &sink->x11.width, &sink->x11.height,
+                      &x, &y, (uint*)&sink->x11.width, (uint*)&sink->x11.height,
                       &border, &depth);
     }
 
