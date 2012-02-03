@@ -1,5 +1,8 @@
-Release x.y.z (YYYY-MM-DD)
-==========================
+Release 0.10.2 (2012-02-03)
+===========================
+- Minor changes and cleanups.
+- Fix double free.
+- Add texture wrap parameters (required for L4T beta).
 
 Release 0.10.0 (2011-12-21)
 ===========================
