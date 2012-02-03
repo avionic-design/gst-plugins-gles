@@ -2,7 +2,7 @@ dnl required version of autoconf
 AC_PREREQ([2.53])
 
 dnl TODO: fill in your package name and package version here
-AC_INIT([gst-plugins-gles],[0.10.2],[bugs@avionic-design.de])
+AC_INIT([gst-plugins-gles],[0.10.3],[bugs@avionic-design.de])
 
 dnl required versions of gstreamer and plugins-base
 GST_REQUIRED=0.10.16
