@@ -394,9 +394,11 @@ egl_close_file (GstGLESSink *sink, const gchar *filename)
                               G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,
                               NULL, &err);
     if (!info || err) {
-        GST_ERROR_OBJECT (sink, "Could get file info: %s",
-                         err->message);
-        g_object_unref (err);
+        if (err) {
+            GST_ERROR_OBJECT (sink, "Could get file info: %s",
+                             err->message);
+            g_object_unref (err);
+        }
         goto cleanup;
     }
 
