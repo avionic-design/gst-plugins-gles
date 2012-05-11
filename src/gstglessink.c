@@ -999,7 +999,7 @@ gst_gles_sink_render (GstBaseSink *basesink, GstBuffer *buf)
 
     g_mutex_lock (thread->render_lock);
     g_get_current_time (&timeout);
-    g_time_val_add (&timeout, 500 * 1000);
+    g_time_val_add (&timeout, 80 * 1000);
     ret = g_cond_timed_wait (thread->render_signal,
                              thread->render_lock, &timeout);
     if (!ret)
