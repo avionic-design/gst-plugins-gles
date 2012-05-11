@@ -48,6 +48,12 @@ static const gchar* shader_basenames[] = {
 
 #define VERTEX_SHADER_BASENAME "vertex"
 
+static gboolean gl_extension_available(const gchar *extension)
+{
+    const gchar *gl_extensions = (gchar*)glGetString(GL_EXTENSIONS);
+    return (g_strstr_len(gl_extensions, -1, extension) != NULL);
+}
+
 static GLuint
 gl_load_binary_shader (GstElement *sink, const char *filename,
                        GLenum type)
@@ -57,6 +63,12 @@ gl_load_binary_shader (GstElement *sink, const char *filename,
     GLuint shader = 0;
     GLsizei length;
     GLint err;
+
+    if (!gl_extension_available("GL_NV_platform_binary")) {
+        GST_WARNING_OBJECT(sink, "Binary shaders are not supported, "
+                           "falling back to source shaders.");
+        return 0;
+    }
 
     file = g_file_new_for_path (filename);
     /* create a shader object */
