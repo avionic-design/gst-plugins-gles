@@ -90,8 +90,6 @@ static GstStateChangeReturn gst_gles_sink_change_state (GstElement *element,
                                                           GstStateChange transition);
 static gint setup_gl_context (GstGLESSink *sink);
 static gpointer gl_thread_proc (gpointer data);
-static gpointer x11_thread_proc (gpointer data);
-static void x11_thread_stop (GstGLESSink *sink);
 
 #define WxH ", width = (int) [ 16, 4096 ], height = (int) [ 16, 4096 ]"
 
@@ -588,62 +586,37 @@ x11_close (GstGLESSink *sink)
 }
 
 static void
-x11_thread_init (GstGLESSink *sink)
-{
-    GError *err = NULL;
-
-    if (!g_thread_get_initialized())
-        g_thread_init (NULL);
-
-    sink->x11.thread = g_thread_create(x11_thread_proc,
-                                       sink, TRUE, &err);
-    if (err || !sink->x11.thread) {
-        GST_ERROR_OBJECT(sink, "Could not create x11 thread");
-    }
-}
-
-static void
-x11_thread_stop (GstGLESSink *sink)
-{
-    if (sink->x11.running) {
-        sink->x11.running = FALSE;
-        g_thread_join(sink->x11.thread);
-    }
-}
-
-/* x11 thread mian function */
-static gpointer
-x11_thread_proc (gpointer data)
+x11_handle_events (gpointer data)
 {
     GstGLESSink *sink = GST_GLES_SINK (data);
     GstGLESWindow *x11 = &sink->x11;
 
-    x11->running = TRUE;
-    while (x11->running && sink->x11.display) {
-        /* check for events from the x-server */
-        XLockDisplay (sink->x11.display);
-        while (XPending (sink->x11.display)) {
-            XEvent  xev;
-            XNextEvent(sink->x11.display, &xev);
+    XLockDisplay (sink->x11.display);
+    while (XPending (sink->x11.display)) {
+        XEvent  xev;
+        XNextEvent(sink->x11.display, &xev);
 
-            switch (xev.type) {
-            case ConfigureRequest:
-            case ConfigureNotify:
-                GST_DEBUG_OBJECT(sink, "XConfigure* Event: wxh: %dx%d",
-                                 xev.xconfigure.width,
-                                 xev.xconfigure.height);
-                sink->x11.width = xev.xconfigure.width;
-                sink->x11.height = xev.xconfigure.height;
-                break;
-            default:
-                break;
-            }
+        switch (xev.type) {
+        case ConfigureRequest:
+            g_print("XConfigure* Request\n");
+        case ConfigureNotify:
+            GST_DEBUG_OBJECT(sink, "XConfigure* Event: wxh: %dx%d",
+                             xev.xconfigure.width,
+                             xev.xconfigure.height);
+            g_print("XConfigure* Event: wxh: %dx%d\n",
+                             xev.xconfigure.width,
+                             xev.xconfigure.height);
+            sink->x11.width = xev.xconfigure.width;
+            sink->x11.height = xev.xconfigure.height;
+
+            gl_draw_onscreen (sink);
+            break;
+        default:
+            break;
         }
-        XUnlockDisplay (sink->x11.display);
-        usleep (100000);
     }
+    XUnlockDisplay (sink->x11.display);
 
-    return 0;
 }
 
 static void
@@ -686,10 +659,18 @@ gl_thread_proc (gpointer data)
     GTimeVal timeout;
     gboolean ret;
 
+    GST_DEBUG_OBJECT(sink, "Init GL context");
     thread->running = setup_gl_context (sink) == 0;
-    x11_thread_init (sink);
+
+    GST_DEBUG_OBJECT(sink, "Init GL context done, send signal");
+    /* signal gst_gles_sink_render that we are done */
+    g_mutex_lock (thread->render_lock);
+    g_cond_signal (thread->render_signal);
+    g_mutex_unlock (thread->render_lock);
 
     while (thread->running) {
+        x11_handle_events (sink);
+
         g_mutex_lock (thread->data_lock);
         /* wait till gst_gles_sink_render has some data for us */
         while (!thread->buf && thread->running) {
@@ -719,7 +700,6 @@ gl_thread_proc (gpointer data)
         g_mutex_unlock (thread->render_lock);
     }
 
-    x11_thread_stop (sink);
     egl_close(sink);
     x11_close(sink);
     return 0;
