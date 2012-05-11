@@ -146,7 +146,7 @@ gl_init_textures (GstGLESSink *sink)
 }
 
 static void
-gl_load_texture (GstGLESSink *sink, GstBuffer *buf)
+gl_load_texture (GstGLESSink *sink, volatile GstBuffer *buf)
 {
     GstGLESContext *gles = &sink->gl_thread.gles;
     /* y component */
@@ -181,7 +181,7 @@ gl_load_texture (GstGLESSink *sink, GstBuffer *buf)
 }
 
 static void
-gl_draw_fbo (GstGLESSink *sink, GstBuffer *buf)
+gl_draw_fbo (GstGLESSink *sink, volatile GstBuffer *buf)
 {
     GLfloat vVertices[] =
     {
