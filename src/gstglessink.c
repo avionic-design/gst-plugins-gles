@@ -589,7 +589,6 @@ static void
 x11_handle_events (gpointer data)
 {
     GstGLESSink *sink = GST_GLES_SINK (data);
-    GstGLESWindow *x11 = &sink->x11;
 
     XLockDisplay (sink->x11.display);
     while (XPending (sink->x11.display)) {
@@ -651,10 +650,8 @@ gl_thread_proc (gpointer data)
 {
     GstGLESSink *sink = GST_GLES_SINK (data);
     GstGLESThread *thread = &sink->gl_thread;
-    GTimeVal timeout;
-    gboolean ret;
 
-    GST_DEBUG_OBJECT(sink, "Init GL context");
+    GST_DEBUG_OBJECT(sink, "Init GL context (no timedwait)");
     thread->running = setup_gl_context (sink) == 0;
 
     GST_DEBUG_OBJECT(sink, "Init GL context done, send signal");
@@ -669,15 +666,7 @@ gl_thread_proc (gpointer data)
         g_mutex_lock (&thread->data_lock);
         /* wait till gst_gles_sink_render has some data for us */
         while (!thread->buf && thread->running) {
-            /* FIXME: We use the timeout as a workaround for cases were we
-             *        get a flow error from another pipeline element.
-             *        In such a case we sometimes run into a dead-lock */
-            g_get_current_time (&timeout);
-            g_time_val_add (&timeout, 500 * 1000);
-            ret = g_cond_timed_wait (thread->data_signal,
-                                     thread->data_lock, &timeout);
-            if (!ret)
-                g_debug("%s: timeout", __func__);
+            g_cond_wait (&thread->data_signal, &thread->data_lock);
         }
 
         if (thread->buf) {
@@ -686,6 +675,7 @@ gl_thread_proc (gpointer data)
             gl_draw_onscreen (sink);
             thread->buf = NULL;
             XUnlockDisplay (sink->x11.display);
+	    thread->render_done = TRUE;
         }
 
         g_mutex_unlock (&thread->data_lock);
@@ -944,20 +934,34 @@ gst_gles_sink_preroll (GstBaseSink * basesink, GstBuffer * buf)
 {
     GstGLESSink *sink = GST_GLES_SINK (basesink);
     GstGLESThread *thread = &sink->gl_thread;
-    if (!thread->running) {
-        thread->buf = buf;
 
+    if (!thread->running) {
         /* give the application the opportunity to head in a
            xwindow id to use as render target */
         gst_x_overlay_prepare_xwindow_id (GST_X_OVERLAY (sink));
 
         g_mutex_lock (&thread->render_lock);
         gl_thread_init(sink);
+        GST_DEBUG_OBJECT(sink, "Wait for init GL context");
+	if (!thread->running) {
             g_cond_wait (&thread->render_signal, &thread->render_lock);
             g_mutex_unlock (&thread->render_lock);
-
-
+	}
+        GST_DEBUG_OBJECT(sink, "Init completed");
     }
+
+    g_mutex_lock (&thread->data_lock);
+    thread->render_done = FALSE;
+    thread->buf = buf;
+    g_cond_signal (&thread->data_signal);
+    g_mutex_unlock (&thread->data_lock);
+
+    if (!thread->render_done) {
+        g_mutex_lock (&thread->render_lock);
+        g_cond_wait (&thread->render_signal, &thread->render_lock);
+        g_mutex_unlock (&thread->render_lock);
+    }
+
     return GST_FLOW_OK;
 }
 
