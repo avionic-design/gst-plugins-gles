@@ -101,10 +101,10 @@ struct _GstGLESThread
 {
     /* thread context */
     GThread *handle;
-    GCond *render_signal;
-    GCond *data_signal;
-    GMutex *render_lock;
-    GMutex *data_lock;
+    GCond render_signal;
+    GCond data_signal;
+    GMutex render_lock;
+    GMutex data_lock;
     volatile gboolean running;
 
     GstGLESContext gles;

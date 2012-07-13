@@ -623,14 +623,9 @@ static void
 gl_thread_init (GstGLESSink *sink)
 {
     GstGLESThread *thread = &sink->gl_thread;
-    GError *err = NULL;
 
-    if (!g_thread_get_initialized())
-        g_thread_init (NULL);
-
-    thread->handle = g_thread_create(gl_thread_proc,
-                                     sink, TRUE, &err);
-    if (err || !sink->gl_thread.handle) {
+    thread->handle = g_thread_new("gl_thread", gl_thread_proc, sink);
+    if (!sink->gl_thread.handle) {
         GST_ERROR_OBJECT(sink, "Could not create gl thread");
     }
 }
@@ -640,11 +635,11 @@ gl_thread_stop (GstGLESSink *sink)
 {
     if (sink->gl_thread.running) {
         sink->gl_thread.running = FALSE;
+        g_mutex_lock (&sink->gl_thread.data_lock);
         sink->gl_thread.buf = NULL;
 
-        g_mutex_lock (sink->gl_thread.data_lock);
-        g_cond_signal (sink->gl_thread.data_signal);
-        g_mutex_unlock (sink->gl_thread.data_lock);
+        g_cond_signal (&sink->gl_thread.data_signal);
+        g_mutex_unlock (&sink->gl_thread.data_lock);
 
         g_thread_join(sink->gl_thread.handle);
     }
@@ -664,14 +659,14 @@ gl_thread_proc (gpointer data)
 
     GST_DEBUG_OBJECT(sink, "Init GL context done, send signal");
     /* signal gst_gles_sink_render that we are done */
-    g_mutex_lock (thread->render_lock);
-    g_cond_signal (thread->render_signal);
-    g_mutex_unlock (thread->render_lock);
+    g_mutex_lock (&thread->render_lock);
+    g_cond_signal (&thread->render_signal);
+    g_mutex_unlock (&thread->render_lock);
 
     while (thread->running) {
         x11_handle_events (sink);
 
-        g_mutex_lock (thread->data_lock);
+        g_mutex_lock (&thread->data_lock);
         /* wait till gst_gles_sink_render has some data for us */
         while (!thread->buf && thread->running) {
             /* FIXME: We use the timeout as a workaround for cases were we
@@ -692,12 +687,13 @@ gl_thread_proc (gpointer data)
             thread->buf = NULL;
             XUnlockDisplay (sink->x11.display);
         }
-        g_mutex_unlock (thread->data_lock);
+
+        g_mutex_unlock (&thread->data_lock);
 
         /* signal gst_gles_sink_render that we are done */
-        g_mutex_lock (thread->render_lock);
-        g_cond_signal (thread->render_signal);
-        g_mutex_unlock (thread->render_lock);
+        g_mutex_lock (&thread->render_lock);
+        g_cond_signal (&thread->render_signal);
+        g_mutex_unlock (&thread->render_lock);
     }
 
     egl_close(sink);
@@ -818,10 +814,10 @@ gst_gles_sink_init (GstGLESSink * sink,
     sink->silent = FALSE;
     sink->gl_thread.gles.initialized = FALSE;
 
-    thread->data_lock = g_mutex_new();
-    thread->render_lock = g_mutex_new();
-    thread->data_signal = g_cond_new();
-    thread->render_signal = g_cond_new();
+    g_mutex_init(&thread->data_lock);
+    g_mutex_init(&thread->render_lock);
+    g_cond_init(&thread->data_signal);
+    g_cond_init(&thread->render_signal);
 
     ret = XInitThreads();
     if (ret == 0) {
@@ -954,11 +950,12 @@ gst_gles_sink_preroll (GstBaseSink * basesink, GstBuffer * buf)
         /* give the application the opportunity to head in a
            xwindow id to use as render target */
         gst_x_overlay_prepare_xwindow_id (GST_X_OVERLAY (sink));
-        gl_thread_init(sink);
 
-        g_mutex_lock (thread->render_lock);
-        g_cond_wait (thread->render_signal, thread->render_lock);
-        g_mutex_unlock (thread->render_lock);
+        g_mutex_lock (&thread->render_lock);
+        gl_thread_init(sink);
+            g_cond_wait (&thread->render_signal, &thread->render_lock);
+            g_mutex_unlock (&thread->render_lock);
+
 
     }
     return GST_FLOW_OK;
@@ -969,50 +966,36 @@ gst_gles_sink_render (GstBaseSink *basesink, GstBuffer *buf)
 {
     GstGLESSink *sink = GST_GLES_SINK (basesink);
     GstGLESThread *thread = &sink->gl_thread;
-    GTimeVal timeout;
-    gboolean ret = TRUE;
 
-    g_mutex_lock (thread->data_lock);
+    GstClockTime start, stop;
+
+    start = gst_util_get_timestamp();
+
+    g_mutex_lock (&thread->data_lock);
+    thread->render_done = FALSE;
     thread->buf = buf;
-    g_cond_signal (thread->data_signal);
-    g_mutex_unlock (thread->data_lock);
+    g_cond_signal (&thread->data_signal);
+    g_mutex_unlock (&thread->data_lock);
 
-    g_mutex_lock (thread->render_lock);
-    g_get_current_time (&timeout);
-    g_time_val_add (&timeout, 80 * 1000);
-    ret = g_cond_timed_wait (thread->render_signal,
-                             thread->render_lock, &timeout);
-    if (!ret)
-        GST_DEBUG_OBJECT (basesink, "Render had a timeout");
-    g_mutex_unlock (thread->render_lock);
+    if (!thread->render_done) {
+        g_mutex_lock (&thread->render_lock);
+        g_cond_wait (&thread->render_signal, &thread->render_lock);
+        g_mutex_unlock (&thread->render_lock);
+    }
 
-    return ret ? GST_FLOW_OK : GST_FLOW_ERROR;
+    stop = gst_util_get_timestamp();
+    GST_DEBUG_OBJECT (basesink, "Render took %llu ms",
+                        stop/GST_MSECOND - start/GST_MSECOND);
+
+    return GST_FLOW_OK;
 }
 
 static void
 gst_gles_sink_finalize (GObject *gobject)
 {
     GstGLESSink *plugin = (GstGLESSink *)gobject;
-    GstGLESThread *thread = &plugin->gl_thread;
 
     gl_thread_stop (plugin);
-
-    if (thread->data_lock) {
-        g_mutex_free(thread->data_lock);
-        thread->data_lock = NULL;
-    }
-    if (thread->render_lock) {
-        g_mutex_free(thread->render_lock);
-        thread->render_lock = NULL;
-    }
-    if (thread->data_signal) {
-        g_cond_free(thread->data_signal);
-        thread->data_signal = NULL;
-    }
-    if (thread->render_signal) {
-        g_cond_free(thread->render_signal);
-        thread->render_signal = NULL;
-    }
 }
 
 /* GstXOverlay Interface implementation */
