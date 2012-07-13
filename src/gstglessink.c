@@ -572,9 +572,10 @@ x11_close (GstGLESSink *sink)
 
         /* only destroy the window if we created it, windows
           owned by the application stay untouched */
-        if (!sink->x11.external_window)
+        if (!sink->x11.external_window) {
             XDestroyWindow (sink->x11.display, sink->x11.window);
-        else
+            sink->x11.window = 0;
+        } else
             XSelectInput (sink->x11.display, sink->x11.window, 0);
 
         XSync (sink->x11.display, FALSE);
