@@ -367,7 +367,6 @@ egl_init (GstGLESSink *sink)
     }
 
     GST_DEBUG_OBJECT (sink, "egl init done");
-    gles->initialized = TRUE;
 
     return 0;
 }
@@ -670,6 +669,12 @@ gl_thread_proc (gpointer data)
         }
 
         if (thread->buf) {
+            if (!thread->gles.initialized) {
+                /* generate the framebuffer object */
+                gl_gen_framebuffer (sink);
+                thread->gles.initialized = TRUE;
+            }
+
             XLockDisplay (sink->x11.display);
             gl_draw_fbo (sink, thread->buf);
             gl_draw_onscreen (sink);
@@ -734,10 +739,6 @@ setup_gl_context (GstGLESSink *sink)
     }
     gles->rgb_tex.loc = glGetUniformLocation(gles->scale.program, "s_tex");
     gl_init_textures (sink);
-
-    /* generate the framebuffer object */
-    gl_gen_framebuffer (sink);
-    gles->initialized = TRUE;
 
     /* finally announce the window handle to controling app */
     if (!sink->x11.external_window)
