@@ -66,7 +66,11 @@ typedef enum _GstGLESPluginProperties  GstGLESPluginProperties;
 enum _GstGLESPluginProperties
 {
   PROP_0,
-  PROP_SILENT
+  PROP_SILENT,
+  PROP_CROP_TOP,
+  PROP_CROP_BOTTOM,
+  PROP_CROP_LEFT,
+  PROP_CROP_RIGHT
 };
 
 GST_BOILERPLATE_WITH_INTERFACE (GstGLESSink, gst_gles_sink, GstVideoSink,
@@ -253,6 +257,21 @@ gl_draw_onscreen (GstGLESSink *sink)
 
     GstGLESContext *gles = &sink->gl_thread.gles;
 
+    /* add cropping to texture coordinates */
+    float crop_left = (float)sink->crop_left / sink->video_width;
+    float crop_right = (float)sink->crop_right / sink->video_width;
+    float crop_top = (float)sink->crop_top / sink->video_height;
+    float crop_bottom = (float)sink->crop_bottom / sink->video_height;
+
+    vVertices[2] += crop_left;
+    vVertices[3] += crop_bottom;
+    vVertices[6] -= crop_right;
+    vVertices[7] += crop_bottom;
+    vVertices[10] -= crop_right;
+    vVertices[11] -= crop_top;
+    vVertices[14] += crop_left;
+    vVertices[15] -= crop_top;
+
     dst.x = 0;
     dst.y = 0;
     dst.w = sink->x11.width;
@@ -260,8 +279,8 @@ gl_draw_onscreen (GstGLESSink *sink)
 
     src.x = 0;
     src.y = 0;
-    src.w = sink->video_width;
-    src.h = sink->video_height;
+    src.w = sink->video_width - sink->crop_left - sink->crop_right;
+    src.h = sink->video_height - sink->crop_top - sink->crop_bottom;
 
     gst_video_sink_center_rect(src, dst, &result, TRUE);
 
@@ -784,6 +803,26 @@ gst_gles_sink_class_init (GstGLESSinkClass * klass)
       g_param_spec_boolean ("silent", "Silent", "Produce verbose output ?",
           FALSE, G_PARAM_READWRITE));
 
+  g_object_class_install_property (gobject_class, PROP_CROP_TOP,
+      g_param_spec_uint ("crop_top", "Crop on top border", "Crop n pixels on top "
+          "of the picture.", 0, G_MAXUINT, 0,
+	  G_PARAM_READWRITE));
+
+  g_object_class_install_property (gobject_class, PROP_CROP_BOTTOM,
+      g_param_spec_uint ("crop_bottom", "Crop on bottom border", "Crop n pixels on "
+	"bottom of the picture.", 0, G_MAXUINT, 0,
+	  G_PARAM_READWRITE));
+
+  g_object_class_install_property (gobject_class, PROP_CROP_LEFT,
+      g_param_spec_uint ("crop_left", "Crop on bottom border", "Crop n pixels on "
+	"left of the picture.", 0, G_MAXUINT, 0,
+	  G_PARAM_READWRITE));
+
+  g_object_class_install_property (gobject_class, PROP_CROP_RIGHT,
+      g_param_spec_uint ("crop_right", "Crop on right border", "Crop n pixels on "
+	"right of the picture.", 0, G_MAXUINT, 0,
+	  G_PARAM_READWRITE));
+
   /* initialise virtual methods */
   basesink_class->start = GST_DEBUG_FUNCPTR (gst_gles_sink_start);
   basesink_class->stop = GST_DEBUG_FUNCPTR (gst_gles_sink_stop);
@@ -830,6 +869,18 @@ gst_gles_sink_set_property (GObject * object, guint prop_id,
     case PROP_SILENT:
       filter->silent = g_value_get_boolean (value);
       break;
+    case PROP_CROP_TOP:
+      filter->crop_top = g_value_get_uint (value);
+      break;
+    case PROP_CROP_BOTTOM:
+      filter->crop_bottom = g_value_get_uint (value);
+      break;
+    case PROP_CROP_LEFT:
+      filter->crop_left = g_value_get_uint (value);
+      break;
+    case PROP_CROP_RIGHT:
+      filter->crop_right = g_value_get_uint (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -845,6 +896,18 @@ gst_gles_sink_get_property (GObject * object, guint prop_id,
   switch (prop_id) {
     case PROP_SILENT:
       g_value_set_boolean (value, filter->silent);
+      break;
+    case PROP_CROP_TOP:
+      g_value_set_uint (value, filter->crop_top);
+      break;
+    case PROP_CROP_BOTTOM:
+      g_value_set_uint (value, filter->crop_bottom);
+      break;
+    case PROP_CROP_LEFT:
+      g_value_set_uint (value, filter->crop_left);
+      break;
+    case PROP_CROP_RIGHT:
+      g_value_set_uint (value, filter->crop_right);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);

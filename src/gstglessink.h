@@ -128,6 +128,11 @@ struct _GstGLESSink
   gint video_height;
 
   /* properties */
+  guint crop_top;
+  guint crop_bottom;
+  guint crop_left;
+  guint crop_right;
+
   gboolean silent;
 };
 
