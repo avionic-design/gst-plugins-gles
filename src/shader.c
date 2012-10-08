@@ -166,6 +166,8 @@ gl_load_source_shader (GstElement *sink, const char *shader_filename,
 
         glDeleteShader (shader);
         shader = 0;
+    } else {
+	GST_DEBUG_OBJECT (sink, "Shader compiled succesfully");
     }
 
     return shader;
@@ -227,8 +229,9 @@ gint
 gl_init_shader (GstElement *sink, GstGLESShader *shader,
                 GstGLESShaderTypes process_type)
 {
-    gint ret;
     gint linked;
+    GLint err;
+    gint ret;
 
     shader->program = glCreateProgram();
     if(!shader->program) {
@@ -244,7 +247,17 @@ gl_init_shader (GstElement *sink, GstGLESShader *shader,
     }
 
     glAttachShader(shader->program, shader->vertex_shader);
+    err = glGetError ();
+    if (err != GL_NO_ERROR) {
+        GST_ERROR_OBJECT (sink, "Error while attaching the vertex shader: 0x%04x\n", err);
+    }
+
     glAttachShader(shader->program, shader->fragment_shader);
+    err = glGetError ();
+    if (err != GL_NO_ERROR) {
+        GST_ERROR_OBJECT (sink, "Error while attaching the fragment shader: 0x%04x\n", err);
+    }
+
     glBindAttribLocation(shader->program, 0, "vPosition");
     glLinkProgram(shader->program);
 
