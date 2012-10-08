@@ -134,6 +134,9 @@ struct _GstGLESSink
   guint crop_right;
 
   gboolean silent;
+
+  guint drop_first;
+  guint dropped;
 };
 
 struct _GstGLESSinkClass

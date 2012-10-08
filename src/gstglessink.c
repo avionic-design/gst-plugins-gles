@@ -70,7 +70,8 @@ enum _GstGLESPluginProperties
   PROP_CROP_TOP,
   PROP_CROP_BOTTOM,
   PROP_CROP_LEFT,
-  PROP_CROP_RIGHT
+  PROP_CROP_RIGHT,
+  PROP_DROP_FIRST
 };
 
 GST_BOILERPLATE_WITH_INTERFACE (GstGLESSink, gst_gles_sink, GstVideoSink,
@@ -823,6 +824,11 @@ gst_gles_sink_class_init (GstGLESSinkClass * klass)
 	"right of the picture.", 0, G_MAXUINT, 0,
 	  G_PARAM_READWRITE));
 
+  g_object_class_install_property (gobject_class, PROP_DROP_FIRST,
+      g_param_spec_uint ("drop_first", "Drop first n frames", "Before the "
+	"first frame is drawn, drop n frames.", 0, G_MAXUINT, 0,
+	  G_PARAM_READWRITE));
+
   /* initialise virtual methods */
   basesink_class->start = GST_DEBUG_FUNCPTR (gst_gles_sink_start);
   basesink_class->stop = GST_DEBUG_FUNCPTR (gst_gles_sink_stop);
@@ -881,6 +887,9 @@ gst_gles_sink_set_property (GObject * object, guint prop_id,
     case PROP_CROP_RIGHT:
       filter->crop_right = g_value_get_uint (value);
       break;
+    case PROP_DROP_FIRST:
+      filter->drop_first = g_value_get_uint (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -908,6 +917,9 @@ gst_gles_sink_get_property (GObject * object, guint prop_id,
       break;
     case PROP_CROP_RIGHT:
       g_value_set_uint (value, filter->crop_right);
+      break;
+    case PROP_DROP_FIRST:
+      g_value_set_uint (value, filter->drop_first);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1015,6 +1027,11 @@ gst_gles_sink_preroll (GstBaseSink * basesink, GstBuffer * buf)
         GST_DEBUG_OBJECT(sink, "Init completed");
     }
 
+    if (sink->dropped < sink->drop_first) {
+        sink->dropped++;
+        goto done;
+    }
+
     g_mutex_lock (&thread->data_lock);
     thread->render_done = FALSE;
     thread->buf = buf;
@@ -1027,6 +1044,7 @@ gst_gles_sink_preroll (GstBaseSink * basesink, GstBuffer * buf)
         g_mutex_unlock (&thread->render_lock);
     }
 
+done:
     return GST_FLOW_OK;
 }
 
@@ -1040,6 +1058,11 @@ gst_gles_sink_render (GstBaseSink *basesink, GstBuffer *buf)
 
     start = gst_util_get_timestamp();
 
+    if (sink->dropped < sink->drop_first) {
+        sink->dropped++;
+        goto done;
+    }
+
     g_mutex_lock (&thread->data_lock);
     thread->render_done = FALSE;
     thread->buf = buf;
@@ -1052,6 +1075,7 @@ gst_gles_sink_render (GstBaseSink *basesink, GstBuffer *buf)
         g_mutex_unlock (&thread->render_lock);
     }
 
+done:
     stop = gst_util_get_timestamp();
     GST_DEBUG_OBJECT (basesink, "Render took %llu ms",
                         stop/GST_MSECOND - start/GST_MSECOND);
