@@ -822,8 +822,6 @@ gst_gles_sink_base_init (gpointer gclass)
 {
   GstElementClass *element_class = GST_ELEMENT_CLASS (gclass);
 
-  element_class->change_state = gst_gles_sink_change_state;
-
   gst_element_class_set_details_simple(element_class,
     "GLES sink",
     "Sink/Video",
@@ -1074,14 +1072,6 @@ gst_gles_sink_set_caps (GstBaseSink *basesink, GstCaps *caps)
   sink->video_width = sink->video_width * par_n / par_d;
 
   return TRUE;
-}
-
-static GstStateChangeReturn
-gst_gles_sink_change_state (GstElement *element, GstStateChange transition)
-{
-    GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
-    ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
-    return ret;
 }
 
 static GstFlowReturn
