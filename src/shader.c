@@ -20,8 +20,11 @@
  */
 
 #include <string.h>
+#include <stdlib.h>
 #include <glib.h>
 #include <gio/gio.h>
+
+#define GST_USE_UNSTABLE_API
 #include <gst/gst.h>
 #include <GLES2/gl2.h>
 

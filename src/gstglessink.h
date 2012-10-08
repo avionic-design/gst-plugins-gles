@@ -111,7 +111,7 @@ struct _GstGLESThread
     GstGLESContext gles;
 
     /* render data */
-    volatile GstBuffer *buf;
+    GstBuffer *buf;
 };
 
 struct _GstGLESSink

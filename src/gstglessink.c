@@ -43,9 +43,15 @@
 
 #include <string.h>
 
+#define GST_USE_UNSTABLE_API
 #include <gst/gst.h>
-#include <gst/video/video.h>
+
+#if GST_CHECK_VERSION(1, 0, 0)
+#include <gst/video/videooverlay.h>
+#else
 #include <gst/interfaces/xoverlay.h>
+#endif
+#include <gst/video/video.h>
 
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
@@ -74,8 +80,17 @@ enum _GstGLESPluginProperties
   PROP_DROP_FIRST
 };
 
+#if GST_CHECK_VERSION(1, 0, 0)
+static void
+gst_gles_video_overlay_init (GstVideoOverlayInterface * iface);
+
+G_DEFINE_TYPE_WITH_CODE (GstGLESSink, gst_gles_sink, GST_TYPE_VIDEO_SINK,
+    G_IMPLEMENT_INTERFACE(GST_TYPE_VIDEO_OVERLAY,
+    gst_gles_video_overlay_init));
+#else
 GST_BOILERPLATE_WITH_INTERFACE (GstGLESSink, gst_gles_sink, GstVideoSink,
     GST_TYPE_VIDEO_SINK, GstXOverlay, GST_TYPE_X_OVERLAY, gst_gles_xoverlay)
+#endif
 
 static void gst_gles_sink_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
@@ -91,19 +106,26 @@ static GstFlowReturn gst_gles_sink_render (GstBaseSink * basesink,
 static GstFlowReturn gst_gles_sink_preroll (GstBaseSink * basesink,
                                               GstBuffer * buf);
 static void gst_gles_sink_finalize (GObject *gobject);
-static GstStateChangeReturn gst_gles_sink_change_state (GstElement *element,
-                                                          GstStateChange transition);
 static gint setup_gl_context (GstGLESSink *sink);
 static gpointer gl_thread_proc (gpointer data);
 
 #define WxH ", width = (int) [ 16, 4096 ], height = (int) [ 16, 4096 ]"
 
+#if GST_CHECK_VERSION(1, 0, 0)
+static GstStaticPadTemplate gles_sink_factory =
+        GST_STATIC_PAD_TEMPLATE ("sink",
+                                 GST_PAD_SINK,
+                                 GST_PAD_ALWAYS,
+                                 GST_STATIC_CAPS ( GST_VIDEO_CAPS_MAKE("I420")
+                                                   WxH) );
+#else
 static GstStaticPadTemplate gles_sink_factory =
         GST_STATIC_PAD_TEMPLATE ("sink",
                                  GST_PAD_SINK,
                                  GST_PAD_ALWAYS,
                                  GST_STATIC_CAPS ( GST_VIDEO_CAPS_YUV("I420")
                                                    WxH) );
+#endif
 
 /* OpenGL ES 2.0 implementation */
 static GLuint
@@ -151,15 +173,29 @@ gl_init_textures (GstGLESSink *sink)
 }
 
 static void
-gl_load_texture (GstGLESSink *sink, volatile GstBuffer *buf)
+gl_load_texture (GstGLESSink *sink, GstBuffer *buf)
 {
+#if GST_CHECK_VERSION(1, 0, 0)
+    GstMapInfo bufmap;
+    guint8 *data;
+
+    if (G_UNLIKELY(!gst_buffer_map (buf, &bufmap, GST_MAP_READ))) {
+	GST_WARNING_OBJECT (sink, "%s: Failed to map buffer data", __func__);
+	return;
+    }
+
+    data = bufmap.data;
+#else
+    guint8 *data = GST_BUFFER_DATA (buf);
+#endif
+
     GstGLESContext *gles = &sink->gl_thread.gles;
     /* y component */
     glActiveTexture(GL_TEXTURE0);
     glBindTexture (GL_TEXTURE_2D, gles->y_tex.id);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, GST_VIDEO_SINK_WIDTH (sink),
                  GST_VIDEO_SINK_HEIGHT (sink), 0, GL_LUMINANCE,
-                 GL_UNSIGNED_BYTE, GST_BUFFER_DATA (buf));
+                 GL_UNSIGNED_BYTE, data);
     glUniform1i (gles->y_tex.loc, 0);
 
     /* u component */
@@ -168,7 +204,7 @@ gl_load_texture (GstGLESSink *sink, volatile GstBuffer *buf)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE,
                  GST_VIDEO_SINK_WIDTH (sink)/2,
                  GST_VIDEO_SINK_HEIGHT (sink)/2, 0, GL_LUMINANCE,
-                 GL_UNSIGNED_BYTE, GST_BUFFER_DATA (buf) +
+                 GL_UNSIGNED_BYTE, data +
                  GST_VIDEO_SINK_WIDTH (sink) * GST_VIDEO_SINK_HEIGHT (sink));
     glUniform1i (gles->u_tex.loc, 1);
 
@@ -178,15 +214,19 @@ gl_load_texture (GstGLESSink *sink, volatile GstBuffer *buf)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE,
                  GST_VIDEO_SINK_WIDTH (sink)/2,
                  GST_VIDEO_SINK_HEIGHT (sink)/2, 0, GL_LUMINANCE,
-                 GL_UNSIGNED_BYTE, GST_BUFFER_DATA (buf) +
+                 GL_UNSIGNED_BYTE, data +
                  GST_VIDEO_SINK_WIDTH (sink) * GST_VIDEO_SINK_HEIGHT (sink) +
                  GST_VIDEO_SINK_WIDTH (sink)/2 *
                  GST_VIDEO_SINK_HEIGHT (sink)/2);
     glUniform1i (gles->v_tex.loc, 2);
+
+#if GST_CHECK_VERSION(1, 0, 0)
+    gst_buffer_unmap(buf, &bufmap);
+#endif
 }
 
 static void
-gl_draw_fbo (GstGLESSink *sink, volatile GstBuffer *buf)
+gl_draw_fbo (GstGLESSink *sink, GstBuffer *buf)
 {
     GLfloat vVertices[] =
     {
@@ -763,12 +803,18 @@ setup_gl_context (GstGLESSink *sink)
 
     /* finally announce the window handle to controling app */
     if (!sink->x11.external_window)
+#if GST_CHECK_VERSION(1, 0, 0)
+        gst_video_overlay_got_window_handle (GST_VIDEO_OVERLAY (sink),
+                                         sink->x11.window);
+#else
         gst_x_overlay_got_window_handle (GST_X_OVERLAY (sink),
                                          sink->x11.window);
+#endif
     return 0;
 }
 
 
+#if !GST_CHECK_VERSION(1, 0, 0)
 /* GObject vmethod implementations */
 
 static void
@@ -787,6 +833,7 @@ gst_gles_sink_base_init (gpointer gclass)
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gles_sink_factory));
 }
+#endif
 
 /* initialize the plugin's class */
 static void
@@ -835,15 +882,31 @@ gst_gles_sink_class_init (GstGLESSinkClass * klass)
   basesink_class->render = GST_DEBUG_FUNCPTR (gst_gles_sink_render);
   basesink_class->preroll = GST_DEBUG_FUNCPTR (gst_gles_sink_preroll);
   basesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_gles_sink_set_caps);
+
+#if GST_CHECK_VERSION(1, 0, 0)
+  gst_element_class_set_details_simple(klass,
+    "GLES sink",
+    "Sink/Video",
+    "Output video using Open GL ES 2.0",
+    "Julian Scheel <julian jusst de>");
+
+  gst_element_class_add_pad_template (klass,
+      gst_static_pad_template_get (&gles_sink_factory));
+#endif
 }
 
 /* entry point to initialize the plug-in
  * initialize the plug-in itself
  * register the element factories and other features
  */
+#if GST_CHECK_VERSION(1, 0, 0)
+static void
+gst_gles_sink_init (GstGLESSink * sink)
+#else
 static void
 gst_gles_sink_init (GstGLESSink * sink,
     GstGLESSinkClass * gclass)
+#endif
 {
     GstGLESThread *thread = &sink->gl_thread;
     Status ret;
@@ -963,6 +1026,20 @@ gst_gles_sink_set_caps (GstBaseSink *basesink, GstCaps *caps)
   gint w;
   gint h;
 
+#if GST_CHECK_VERSION(1, 0, 0)
+  GstVideoInfo info;
+
+  if (!gst_video_info_from_caps (&info, caps)) {
+      GST_WARNING_OBJECT (sink, "Failed to read video info from caps");
+      return FALSE;
+  }
+
+  fmt = GST_VIDEO_INFO_FORMAT(&info);
+  w = info.width;
+  h = info.height;
+  par_n = info.par_n;
+  par_d = info.par_d;
+#else
   if (!gst_video_format_parse_caps (caps, &fmt, &w, &h)) {
       GST_WARNING_OBJECT (sink, "pase_caps failed");
       return FALSE;
@@ -973,8 +1050,9 @@ gst_gles_sink_set_caps (GstBaseSink *basesink, GstCaps *caps)
       GST_WARNING_OBJECT (sink, "no pixel aspect ratio");
       return FALSE;
   }
-
+#endif
   g_assert ((fmt == GST_VIDEO_FORMAT_I420));
+
   sink->video_width = w;
   sink->video_height = h;
   GST_VIDEO_SINK_WIDTH (sink) = w;
@@ -1015,7 +1093,11 @@ gst_gles_sink_preroll (GstBaseSink * basesink, GstBuffer * buf)
     if (!thread->running) {
         /* give the application the opportunity to head in a
            xwindow id to use as render target */
+#if GST_CHECK_VERSION(1, 0, 0)
+        gst_video_overlay_prepare_window_handle (GST_VIDEO_OVERLAY (sink));
+#else
         gst_x_overlay_prepare_xwindow_id (GST_X_OVERLAY (sink));
+#endif
 
         g_mutex_lock (&thread->render_lock);
         gl_thread_init(sink);
@@ -1091,9 +1173,14 @@ gst_gles_sink_finalize (GObject *gobject)
     gl_thread_stop (plugin);
 }
 
-/* GstXOverlay Interface implementation */
+/* Overlay Interface implementation */
+#if GST_CHECK_VERSION(1, 0, 0)
+static void
+gst_gles_video_overlay_set_handle (GstVideoOverlay *overlay, guintptr handle)
+#else
 static void
 gst_gles_xoverlay_set_window_handle (GstXOverlay *overlay, guintptr handle)
+#endif
 {
     GstGLESSink *sink = GST_GLES_SINK (overlay);
 
@@ -1109,12 +1196,21 @@ gst_gles_xoverlay_set_window_handle (GstXOverlay *overlay, guintptr handle)
     }
 }
 
+#if GST_CHECK_VERSION(1, 0, 0)
+static void
+gst_gles_video_overlay_init (GstVideoOverlayInterface * iface)
+{
+    iface->set_window_handle = gst_gles_video_overlay_set_handle;
+}
+#else
 static void
 gst_gles_xoverlay_interface_init (GstXOverlayClass *overlay_klass)
 {
     overlay_klass->set_window_handle = gst_gles_xoverlay_set_window_handle;
 }
+#endif
 
+#if !GST_CHECK_VERSION(1, 0, 0)
 static gboolean
 gst_gles_xoverlay_supported (GstGLESSink *sink,
                              GType iface_type)
@@ -1124,6 +1220,7 @@ gst_gles_xoverlay_supported (GstGLESSink *sink,
 
     return TRUE;
 }
+#endif
 
 /* entry point to initialize the plug-in
  * initialize the plug-in itself
