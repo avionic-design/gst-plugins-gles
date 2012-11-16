@@ -19,8 +19,8 @@ libgstglesplugin_la_SOURCES = \
     gstglessink.c gstglessink.h
 
 # compiler and linker flags used to compile this plugin, set in configure.ac
-libgstglesplugin_la_CFLAGS = $(GST_CFLAGS)
-libgstglesplugin_la_LIBADD = $(GST_LIBS)
+libgstglesplugin_la_CFLAGS = $(GST_CFLAGS) $(GLES_CFLAGS) $(GIO_CFLAGS)
+libgstglesplugin_la_LIBADD = $(GST_LIBS) $(GLES_LIBS) $(GIO_LIBS)
 libgstglesplugin_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
 libgstglesplugin_la_LIBTOOLFLAGS = --tag=disable-static
 

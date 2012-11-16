@@ -4,10 +4,6 @@ AC_PREREQ([2.53])
 dnl TODO: fill in your package name and package version here
 AC_INIT([gst-plugins-gles],[0.10.3],[bugs@avionic-design.de])
 
-dnl required versions of gstreamer and plugins-base
-GST_REQUIRED=0.10.16
-GSTPB_REQUIRED=0.10.16
-
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR([src])
 AC_CONFIG_HEADERS([config.h])
@@ -33,36 +29,74 @@ AC_CHECK_PROG(HAVE_PKGCONFIG, pkg-config, [ ], [
 
 dnl Check for the required version of GStreamer core (and gst-plugins-base)
 dnl This will export GST_CFLAGS and GST_LIBS variables for use in Makefile.am
-dnl
-dnl If you need libraries from gst-plugins-base here, also add:
-dnl for libgstaudio-0.10: gstreamer-audio-0.10 >= $GST_REQUIRED
-dnl for libgstvideo-0.10: gstreamer-video-0.10 >= $GST_REQUIRED
-dnl for libgsttag-0.10: gstreamer-tag-0.10 >= $GST_REQUIRED
-dnl for libgstpbutils-0.10: gstreamer-pbutils-0.10 >= $GST_REQUIRED
-dnl for libgstfft-0.10: gstreamer-fft-0.10 >= $GST_REQUIRED
-dnl for libgstinterfaces-0.10: gstreamer-interfaces-0.10 >= $GST_REQUIRED
-dnl for libgstrtp-0.10: gstreamer-rtp-0.10 >= $GST_REQUIRED
-dnl for libgstrtsp-0.10: gstreamer-rtsp-0.10 >= $GST_REQUIRED
-dnl etc.
-PKG_CHECK_MODULES(GST, [
-  gstreamer-0.10 >= $GST_REQUIRED
-  gstreamer-base-0.10 >= $GST_REQUIRED
-  gstreamer-controller-0.10 >= $GST_REQUIRED
-  gstreamer-video-0.10 >= $GST_REQUIRED
-  gstreamer-interfaces-0.10 >= $GST_REQUIRED
-  glesv2
-  egl
-  gio-2.0
-], [
-  AC_SUBST(GST_CFLAGS)
-  AC_SUBST(GST_LIBS)
-], [
-  AC_MSG_ERROR([
+AC_MSG_CHECKING([the GStreamer version to use])
+AC_ARG_WITH([gstreamer],
+	[AS_HELP_STRING([--with-gstreamer=0.10|1.0], [the GStreamer version to use (default: 0.10)])],
+	[case "$with_gstreamer"
+		in 0.10|1.0) ;;
+		*) AC_MSG_ERROR([invalid GStreamer version specified]) ;;
+	esac], [with_gstreamer=0.10])
+AC_MSG_RESULT([$with_gstreamer])
+
+GSTREAMER_0_10_REQUIRED_VERSION=0.10
+GSTREAMER_0_10_PLUGINS_BASE_REQUIRED_VERSION=0.10.30
+GSTREAMER_1_0_REQUIRED_VERSION=1.0
+GSTREAMER_1_0_PLUGINS_BASE_REQUIRED_VERSION=1.0
+
+case "$with_gstreamer" in
+	0.10)	GSTREAMER_REQUIRED_VERSION=$GSTREAMER_0_10_REQUIRED_VERSION
+		GSTREAMER_PLUGINS_BASE_REQUIRED_VERSION=$GSTREAMER_0_10_PLUGINS_BASE_REQUIRED_VERSION
+		GST_API_VERSION=0.10
+		;;
+	1.0)	GSTREAMER_REQUIRED_VERSION=$GSTREAMER_1_0_REQUIRED_VERSION
+		GSTREAMER_PLUGINS_BASE_REQUIRED_VERSION=$GSTREAMER_1_0_PLUGINS_BASE_REQUIRED_VERSION
+		GST_API_VERSION=1.0
+		;;
+esac
+
+AC_SUBST([GST_API_VERSION])
+if test "$GST_API_VERSION" = "1.0"; then
+	AC_DEFINE([GST_USE_UNSTABLE_API], [1], [Using unstable GStreamer API])
+	AC_DEFINE([GST_API_VERSION_1],[1], [Using GStreamer 1.0])
+fi
+
+gstreamer_modules="gstreamer-$GST_API_VERSION
+	gstreamer-base-$GST_API_VERSION
+	gstreamer-controller-$GST_API_VERSION
+	gstreamer-video-$GST_API_VERSION ";
+
+if test "$GST_API_VERSION" = "0.10"; then
+  gstreamer_modules+="gstreamer-interfaces-$GST_API_VERSION "
+fi
+
+PKG_CHECK_MODULES(GST, [$gstreamer_modules],
+  [AC_SUBST(GST_CFLAGS) AC_SUBST(GST_LIBS)],
+  [AC_MSG_ERROR([
       You need to install or upgrade the GStreamer development
       packages on your system. On debian-based systems these are
-      libgstreamer0.10-dev and libgstreamer-plugins-base0.10-dev.
-      on RPM-based systems gstreamer0.10-devel, libgstreamer0.10-devel
+      libgstreamer$GST_API_VERSION-dev and libgstreamer-plugins-base$GST_API_VERSION-dev.
+      on RPM-based systems gstreamer$GST_API_VERSION-devel, libgstreamer$GST_API_VERSION-devel
       or similar. The minimum version required is $GST_REQUIRED.
+  ])
+])
+
+PKG_CHECK_MODULES(GLES, [glesv2 egl],
+  [AC_SUBST(GLES_CFLAGS) AC_SUBST(GLES_LIBS)],
+  [AC_MSG_ERROR([
+      You need to install or upgrade the OpenGLES development
+      packages on your system. On debian-based systems these are
+      most likely mesa-dev. On RPM-based systems mesa-devel or
+      similar.
+  ])
+])
+
+PKG_CHECK_MODULES(GIO, [gio-2.0],
+  [AC_SUBST(GIO_CFLAGS) AC_SUBST(GIO_LIBS)],
+  [AC_MSG_ERROR([
+      You need to install or upgrade the glib development
+      packages on your system. On debian-based systems these are
+      most likely glib-dev. On RPM-based systems glib-devel or
+      similar.
   ])
 ])
 
@@ -79,9 +113,9 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([ ], [ ])], [
 
 dnl set the plugindir where plugins should be installed (for src/Makefile.am)
 if test "x${prefix}" = "x$HOME"; then
-  plugindir="$HOME/.gstreamer-0.10/plugins"
+  plugindir="$HOME/.gstreamer-$GST_API_VERSION/plugins"
 else
-  plugindir="\$(libdir)/gstreamer-0.10"
+  plugindir="\$(libdir)/gstreamer-$GST_API_VERSION"
 fi
 AC_SUBST(plugindir)
 
