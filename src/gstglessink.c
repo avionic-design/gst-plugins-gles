@@ -1246,7 +1246,11 @@ plugin_init (GstPlugin * plugin)
 GST_PLUGIN_DEFINE (
     GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
+#if GST_CHECK_VERSION(1, 0, 0)
+    glesplugin,
+#else
     "glesplugin",
+#endif
     "Open GL ES 2.0 plugin",
     plugin_init,
     VERSION,
