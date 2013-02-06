@@ -678,15 +678,20 @@ x11_handle_events (gpointer data)
 
 }
 
-static void
+static gboolean
 gl_thread_init (GstGLESSink *sink)
 {
     GstGLESThread *thread = &sink->gl_thread;
+    GError *error = NULL;
 
-    thread->handle = g_thread_new("gl_thread", gl_thread_proc, sink);
-    if (!sink->gl_thread.handle) {
-        GST_ERROR_OBJECT(sink, "Could not create gl thread");
+    thread->handle = g_thread_try_new ("gl_thread", gl_thread_proc, sink, &error);
+    if (!thread->handle) {
+        GST_ERROR_OBJECT (sink, "Can't create render-thread: %s",
+                          error ? error->message : "(unknown)");
+        g_clear_error (&error);
+        return FALSE;
     }
+    return TRUE;
 }
 
 static void
@@ -1090,7 +1095,10 @@ gst_gles_sink_preroll (GstBaseSink * basesink, GstBuffer * buf)
 #endif
 
         g_mutex_lock (&thread->render_lock);
-        gl_thread_init(sink);
+        if (!gl_thread_init (sink)) {
+            g_mutex_unlock (&thread->render_lock);
+            goto fail;
+        }
         GST_DEBUG_OBJECT(sink, "Wait for init GL context");
 	if (!thread->running) {
             g_cond_wait (&thread->render_signal, &thread->render_lock);
@@ -1118,6 +1126,10 @@ gst_gles_sink_preroll (GstBaseSink * basesink, GstBuffer * buf)
 
 done:
     return GST_FLOW_OK;
+fail:
+    GST_ELEMENT_ERROR (sink, LIBRARY, INIT, ("Can't create render-thread"),
+                       GST_ERROR_SYSTEM);
+    return GST_FLOW_ERROR;
 }
 
 static GstFlowReturn
