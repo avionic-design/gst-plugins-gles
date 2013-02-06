@@ -843,6 +843,7 @@ static void
 gst_gles_sink_class_init (GstGLESSinkClass * klass)
 {
   GstBaseSinkClass *basesink_class = GST_BASE_SINK_CLASS (klass);
+  GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
 
   gobject_class->finalize = gst_gles_sink_finalize;
@@ -887,13 +888,13 @@ gst_gles_sink_class_init (GstGLESSinkClass * klass)
   basesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_gles_sink_set_caps);
 
 #if GST_CHECK_VERSION(1, 0, 0)
-  gst_element_class_set_details_simple(klass,
+  gst_element_class_set_details_simple(element_class,
     "GLES sink",
     "Sink/Video",
     "Output video using Open GL ES 2.0",
     "Julian Scheel <julian jusst de>");
 
-  gst_element_class_add_pad_template (klass,
+  gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gles_sink_factory));
 #endif
 }
